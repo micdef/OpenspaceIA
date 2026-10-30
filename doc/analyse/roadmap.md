@@ -13,6 +13,7 @@ Prepared by Mon Mothma (`planner`), reviewed by Claude, validated by Michaël De
 - The states of the agents: **working** (at the desk), **overloaded** (chains several projects without a break: sweat and paper stacks), **waiting for you** (at the coffee machine, calls you with a "!" bubble), **idle** (relaxes: coffee, billiards, arcade, board games). Only idle counts as under-use.
 - The Projects screen (in progress, waiting, done, interrupted) and the History screen (workload over 7 days).
 - The discreet mode.
+- The **context** of each session, and the **usage limits of the plan** (5-hour window and weekly limit), as a percentage.
 - **Writing, on this machine only**: create an agent, create a team (one per project if needed), assign agents and teams to a project; a backup before each change and a confirmation.
 - Windows and Linux, installable from a package.
 - User, administrator and developer documentation.
@@ -35,9 +36,10 @@ Prepared by Mon Mothma (`planner`), reviewed by Claude, validated by Michaël De
 - **Riskiest work first.** The format of `~/.claude` and the "waiting for you" signal are proven on real files (0.2.0) before any product code.
 - **A tool, an abstraction or a package is added only by the version that needs it.** An architecture rule is added with the project it protects.
 - **Tests from the start.** The core rules and the reader are written tests first (Kenobi).
-- **Threat analysis before the code it covers**: writing agents (0.12.0), the network (1.1.0), the elevation prompt (1.5.0), the web (1.6.0).
+- **Threat analysis before the code it covers**: a status line written in `settings.json`, if the usage limits need it (0.12.0), writing agents (0.13.0), the network (1.1.0), the elevation prompt (1.5.0), the web (1.6.0).
+- **Network addresses are configuration, never code.** Wherever there is network, the IP address and the port of each application (hub, collector, clients) can be changed in its configuration file; the code only holds the documented defaults.
 - **Security-sensitive work is marked [SEC].** It is written by the main developer, never by a coder agent, and reviewed by the agents and by the project lead.
-- **`~/.claude` is sensitive and untrusted.** The application reads it and never writes to it, except agent files created on purpose from 0.12.0; it sends nothing to a third party; the text of the transcripts is plain text, never rendered as HTML, never run.
+- **`~/.claude` is sensitive and untrusted.** The application reads it and never writes to it, except agent files created on purpose from 0.13.0; it sends nothing to a third party; the text of the transcripts is plain text, never rendered as HTML, never run.
 
 ## Architecture summary
 
@@ -48,7 +50,7 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 | Core | Model (machine, project, session, agent, task) and state rules; knows neither the user interface nor the file format | 0.3.0 |
 | Reader | Adapter that reads `~/.claude`; the only module that changes when the format of Claude Code changes | 0.4.0 |
 | Desktop | Avalonia application, Windows and Linux; the only part that writes, on its own machine only | 0.5.0 |
-| Writer | Adapter that creates agents and teams and assigns them, with backup and confirmation | 0.12.0 |
+| Writer | Adapter that creates agents and teams and assigns them, with backup and confirmation | 0.13.0 |
 | Hub | SignalR server in the home lab (Linux service or IIS); gathers the machines; exposes reading only | 1.2.0 |
 | Collector | Worker service on each machine (Windows service under the user's account, systemd user service on Linux); stops when the hub is not reachable | 1.3.0 |
 | Web | Read only, through the hub | 1.6.0 |
@@ -136,25 +138,32 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 - **Tests**: in discreet mode, no transcript text is in the view models.
 - **Branches**: `feature/street-view` and `feature/discreet-mode` (in parallel).
 
+#### 0.12.0 — Usage limits of the plan
+
+- **Content**: a spike on the source of the limits: they are not in the files of `~/.claude`; Claude Code gives them to a status line command (`rate_limits.five_hour` and `rate_limits.seven_day`: `used_percentage`, `resets_at`; Pro and Max plans only), and Claude Desktop shows them (does a Desktop session run a status line? not verified). If the only source needs a status line written in `settings.json`, a threat analysis comes first, because it widens what the application writes. Then the reading of the limits and their display: the 5-hour window and the weekly limit, as a percentage, with the time of their reset; the context of each session (decision 10 of `claude-model-decisions.md`) on its card.
+- **Done**: the office shows the percentage of the 5-hour window and of the week that is used, with their reset times, and the context of each session; the screen says clearly when the limits cannot be read.
+- **Tests**: reading of the limits (missing window, expired window, plan without limits); the display when no source is available.
+- **Branches**, in order: `docs/plan-limits-source`, then (only if the source needs it) `docs/threat-model-status-line`, then `feature/plan-limits-reader`, `feature/plan-limits-display`.
+
 ### Block 3 — The desktop application, write
 
-#### 0.12.0 — Write: create an agent [SEC]
+#### 0.13.0 — Write: create an agent [SEC]
 
 - **Content**: the threat model of writing (allowed paths only, name validation, backup before each change, confirmation, this machine only); the Writer project with its backup; creating an agent from the "New agent" panel; an architecture rule: the core and the reader never reference the writer.
 - **Done**: you create an agent from the Teams screen; the file is written only where planned, after a backup and your confirmation; Claude Code sees the new agent.
 - **Tests**: forbidden paths and names are refused; the backup exists before the write; a failed write leaves the previous state untouched.
 - **Branches**, in order: `docs/threat-model-writing`, `feature/writer-backup`, `feature/writer-create-agent`, `feature/teams-screen-new-agent`.
 
-#### 0.13.0 — Write: teams and assignment [SEC]
+#### 0.14.0 — Write: teams and assignment [SEC]
 
 - **Content**: the team model (stored in a file of our own, outside `~/.claude`, unless the spike shows a better place); the assignment of agents and teams to a project; the complete Teams screen.
 - **Done**: you create a team, add agents, assign it to a project, and the office shows it.
-- **Tests**: as in 0.12.0, for every write; removing a team asks for a confirmation and keeps a backup.
+- **Tests**: as in 0.13.0, for every write; removing a team asks for a confirmation and keeps a backup.
 - **Branches**, in order: `feature/team-model`, `feature/team-assignment`, `feature/teams-screen-teams`.
 
 ### Block 4 — Towards v1.0.0
 
-#### 0.14.0 — Packaging and hardening
+#### 0.15.0 — Packaging and hardening
 
 - **Content**: self-contained publication for `win-x64` and `linux-x64`; the release workflow on a tag; the Doxygen configuration (`doc/dev`, HTML not versioned); the user and administrator documentation; a security review by Ackbar and Cassian, on request of the project lead (read-only access to `~/.claude`, writing limits, no network output, dependencies).
 - **Done**: the package installs on a clean Windows machine and a clean Linux machine.
@@ -174,7 +183,7 @@ Each version is a release with packages. A fix between two versions goes through
 
 #### 1.1.0 — Network: threat model and contract
 
-- **Content**: documents only: the threat model of the network (collector ↔ hub ↔ clients), the wire contract and the ports, the choice of the authentication (one identity per collector, so that one machine can be removed without touching the others), TLS.
+- **Content**: documents only: the threat model of the network (collector ↔ hub ↔ clients), the wire contract and the ports (the default ports, all changeable in the configuration of each application, and the **range of ports reserved for the network tests**), the choice of the authentication (one identity per collector, so that one machine can be removed without touching the others), TLS.
 - **Branches**: `docs/threat-model-network`, `docs/wire-contract-and-ports`, `docs/authentication-choice`.
 
 #### 1.2.0 — Hub [SEC]
@@ -206,7 +215,7 @@ Each version is a release with packages. A fix between two versions goes through
 
 ### Slack
 
-If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one version, and 0.11.0 (Street) can move after 0.13.0, without affecting the rest.
+If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one version, and 0.11.0 (Street) can move after 0.14.0, without affecting the rest.
 
 ## Test strategy
 
@@ -216,8 +225,8 @@ If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one
 | Core | State rules, project states, workload aggregation; pure code with an injectable clock | 0.3.0 |
 | Reader | Invented fixtures, broken and large files, read-only folder, full file sharing | 0.4.0 |
 | Desktop | View models; plain text only; discreet mode | 0.5.0 |
-| Writer | Allowed paths, backup before write, failed write leaves the previous state | 0.12.0 |
-| Network | Loopback sockets on port 0, authentication, reconnection; several runs | 1.2.0 |
+| Writer | Allowed paths, backup before write, failed write leaves the previous state | 0.13.0 |
+| Network | Loopback sockets on ports taken from the range reserved for the tests (1.1.0), so that test runs can work in parallel without conflicts; authentication, reconnection; several runs | 1.2.0 |
 
 - Test projects live in `test/` and all run in the CI; tests never use a real transcript.
 - Tests wait for events, never for fixed delays; the only accepted delay is one that proves an event does **not** happen, and it is documented on the test.
@@ -229,7 +238,8 @@ If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one
 | The "waiting for you" signal cannot be detected in the files | 0.2.0: experiment on real files, and a fallback decided before any code |
 | Claude Code changes the format of `~/.claude` | 0.4.0: one reader adapter, tolerant reading, a visible "unknown" instead of wrong data |
 | Claude Code deletes old files, so the history is incomplete (not verified) | 0.2.0 checks it; a small storage of our own only if needed |
-| Writing breaks an agent or a project | 0.12.0: threat model, allowed paths, backup, confirmation, this machine only |
+| The usage limits of the plan cannot be read without writing in `settings.json` | 0.12.0: spike first; a threat analysis before any write; the screen says when the limits are unknown |
+| Writing breaks an agent or a project | 0.13.0: threat model, allowed paths, backup, confirmation, this machine only |
 | A secret or a hostile text from a transcript reaches the screen | Plain text only; discreet mode in 0.11.0 |
 | The Avalonia build sends telemetry | 0.5.0: `AVALONIA_TELEMETRY_OPTOUT=1` in the CI and on the workstations |
 | Licence of the pixel art | 0.6.0: sprites drawn for the project, no third-party pack |
@@ -250,6 +260,7 @@ If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one
 | Principle | Least privilege everywhere |
 | Licence | PolyForm Strict 1.0.0 |
 | Scope of v1.0.0 | The complete desktop application of one machine, read and write; the network and the web come after |
+| Usage limits of the plan | In v1.0.0 (0.12.0): the 5-hour window and the weekly limit as a percentage, with their reset times; the author has a Max plan |
 
 ## Choices left for later
 
@@ -257,7 +268,7 @@ If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one
 |--------|------|
 | Threshold and time window of "overloaded" | 0.3.0, calibrated on a real week |
 | History computed from the files, or stored | 0.10.0, after the spike |
-| Where a team lives | 0.13.0, after the spike (default: a file of our own, outside `~/.claude`) |
+| Where a team lives | 0.14.0, after the spike (default: a file of our own, outside `~/.claude`) |
 | Language of the interface (English only, texts in a resource file) | 0.5.0 |
 | Polling or file watching | 0.5.0, polling first, measured before any change |
 | A MVVM package, only if the hand-written view models become painful | 0.5.0 |
