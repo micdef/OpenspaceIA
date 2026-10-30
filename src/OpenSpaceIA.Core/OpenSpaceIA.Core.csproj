@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Core: the model of the office (machine, project, session, agent, run, task) and its read port.
+       It depends on nothing: no project and no package reference (checked by the architecture tests). -->
+
+</Project>

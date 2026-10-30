@@ -1,0 +1,72 @@
+# ┌──────────────┬──────────────────────────────────────────────────────────────┐
+# │ File         │ Doxyfile                                                     │
+# │ Scope        │ API documentation of the whole solution                      │
+# │ Purpose      │ Generates the HTML documentation from the C# XML comments    │
+# │              │ (///). Open it with Doxywizard (File > Open), keep the       │
+# │              │ working directory set to this folder, then Run.              │
+# │              │ Command line: doxygen Doxyfile (from this folder).           │
+# │              │ Only non-default settings are listed; Doxygen uses its own   │
+# │              │ defaults for the others.                                     │
+# │ Author       │ Defraene Michaël (AKA Sonic) (co-written by Claude)          │
+# └──────────────┴──────────────────────────────────────────────────────────────┘
+
+#---------------------------------------------------------------------------
+# Project (doc/ must exist: Doxygen creates only the last level of OUTPUT_DIRECTORY)
+#---------------------------------------------------------------------------
+PROJECT_NAME           = "OpenSpaceIA"
+PROJECT_BRIEF          = "An animated office that shows who works on what: Claude and its agents"
+OUTPUT_DIRECTORY       = doc/dev
+OUTPUT_LANGUAGE        = English
+
+#---------------------------------------------------------------------------
+# Input: the bilingual README is the main page, followed by the contribution guide, the changelog, the analysis documents
+# and the coding conventions; the C# sources of src/ are documented (tests are not)
+#---------------------------------------------------------------------------
+INPUT                  = README.md CONTRIBUTING.md CHANGELOG.md \
+                         changelog/unreleased/README.md \
+                         doc/analyse/roadmap.md \
+                         doc/analyse/spike-claude-files.md \
+                         doc/analyse/spike-waiting-signal.md \
+                         doc/analyse/claude-model-decisions.md \
+                         doc/analyse/state-definitions.md \
+                         doc/dev/coding-conventions.md \
+                         src
+USE_MDFILE_AS_MAINPAGE = README.md
+FILE_PATTERNS          = *.cs
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */bin/* */obj/*
+INPUT_ENCODING         = UTF-8
+# Doxygen 1.18 does not know the C# "record" keyword: each C# file is read through a filter that presents the records as
+# classes and structs, without changing the source (PowerShell 7 must be installed; the path is relative to this folder)
+FILTER_PATTERNS        = *.cs="pwsh -NoProfile -File tools/doxygen/Convert-RecordsForDoxygen.ps1"
+# Images used by the Markdown pages (copied into the HTML output)
+IMAGE_PATH             = doc/assets/mockups
+
+#---------------------------------------------------------------------------
+# Extraction: only documented members are published; private members and internal types are documented too (coding
+# conventions), so they are published for the developers
+#---------------------------------------------------------------------------
+EXTRACT_ALL            = NO
+EXTRACT_PRIVATE        = YES
+EXTRACT_PACKAGE        = YES
+EXTRACT_STATIC         = YES
+HIDE_UNDOC_MEMBERS     = YES
+HIDE_UNDOC_CLASSES     = YES
+
+#---------------------------------------------------------------------------
+# Warnings: undocumented members and wrong parameter names are reported
+#---------------------------------------------------------------------------
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_NO_PARAMDOC       = YES
+WARN_LOGFILE           = doc/dev/doxygen-warnings.log
+
+#---------------------------------------------------------------------------
+# Output: HTML only
+#---------------------------------------------------------------------------
+GENERATE_HTML          = YES
+GENERATE_TREEVIEW      = YES
+SOURCE_BROWSER         = YES
+GENERATE_LATEX         = NO

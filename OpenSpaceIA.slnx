@@ -7,6 +7,7 @@
     <File Path="CONTRIBUTING.md" />
     <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
+    <File Path="Doxyfile" />
     <File Path="global.json" />
     <File Path="LICENSE" />
     <File Path="README.md" />
@@ -28,18 +29,25 @@
     <File Path="doc/analyse/roadmap.md" />
     <File Path="doc/analyse/spike-claude-files.md" />
     <File Path="doc/analyse/spike-waiting-signal.md" />
+    <File Path="doc/analyse/state-definitions.md" />
     <File Path="doc/assets/README.md" />
+    <File Path="doc/dev/coding-conventions.md" />
     <File Path="doc/dev/README.md" />
     <File Path="doc/user/README.md" />
   </Folder>
   <Folder Name="/src/">
     <File Path="src/README.md" />
+    <Project Path="src/OpenSpaceIA.Core/OpenSpaceIA.Core.csproj" />
   </Folder>
   <Folder Name="/test/">
+    <File Path="test/Directory.Build.props" />
     <File Path="test/README.md" />
+    <Project Path="test/OpenSpaceIA.Architecture.Tests/OpenSpaceIA.Architecture.Tests.csproj" />
+    <Project Path="test/OpenSpaceIA.Core.Tests/OpenSpaceIA.Core.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <File Path="tools/README.md" />
     <File Path="tools/changelog/Merge-ChangelogFragments.ps1" />
+    <File Path="tools/doxygen/Convert-RecordsForDoxygen.ps1" />
   </Folder>
 </Solution>

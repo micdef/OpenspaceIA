@@ -78,12 +78,12 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 - **Content**: the written definition of the four states, of "overloaded" (threshold and time window, configurable) and of "under-used"; the Core project (machine, project, session, agent, task) with its read port; the state rules with an injectable clock; the first architecture rules (Core depends on nothing, with a positive control); the CI no longer skips the test step when there is no test project (temporary skip of 0.1.0, removed here).
 - **Done**: named scenarios (at the desk, chaining without a break, waiting, resting) give the right state; the CI runs its first tests, with coverage and TRX reports.
 - **Tests**: written first (Kenobi); limit cases at the thresholds; fake clock; an agent is never working and idle at the same time.
-- **Branches**, in order: `docs/state-definitions`, `feature/core-model`, then `feature/state-rules` and `test/architecture-rules` (in parallel only if neither adds a package).
+- **Branches**, in order: `docs/state-definitions`, `docs/coding-conventions`, `chore/doxygen` (the `Doxyfile`, moved here from 0.15.0 so that the documentation of the first code can be generated), `feature/core-model`, then `feature/state-rules` and `test/architecture-rules` (in parallel only if neither adds a package).
 
 #### 0.4.0 — The reader of `~/.claude`
 
 - **Content**: the Reader project with invented fixtures; a tolerant reading: an unknown or unreadable line is skipped and logged, never an exception that goes up; agent definitions; sessions and sub-agents turned into observations for the rules; the waiting signal (or its fallback) from 0.2.0; files opened with full sharing so that Claude Code is never disturbed.
-- **Done**: a local test, skipped in the CI, shows the real state of your agents; a missing, broken or locked file never stops the reader.
+- **Done**: a local test, skipped in the CI, shows the real state of your agents; a missing, broken or locked file never stops the reader; the thresholds of "overloaded" are calibrated on a real week of your activity, and their defaults changed in `state-definitions.md` if needed.
 - **Tests**: written first (Kenobi), reviewed by Boba Fett; truncated files, encodings, a very large file (stream reading); the reader creates and writes nothing (test on a read-only folder); it only returns what the core needs.
 - **Branches**, in order: `feature/reader-project`, then `feature/reader-agents` and `feature/reader-activity` (in parallel), then `feature/reader-waiting-signal`, then `test/reader-local-smoke`.
 
@@ -165,9 +165,9 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 
 #### 0.15.0 — Packaging and hardening
 
-- **Content**: self-contained publication for `win-x64` and `linux-x64`; the release workflow on a tag; the Doxygen configuration (`doc/dev`, HTML not versioned); the user and administrator documentation; a security review by Ackbar and Cassian, on request of the project lead (read-only access to `~/.claude`, writing limits, no network output, dependencies).
+- **Content**: self-contained publication for `win-x64` and `linux-x64`; the release workflow on a tag; the user and administrator documentation; a security review by Ackbar and Cassian, on request of the project lead (read-only access to `~/.claude`, writing limits, no network output, dependencies).
 - **Done**: the package installs on a clean Windows machine and a clean Linux machine.
-- **Branches**: `chore/publish-scripts`, `docs/user-and-admin-docs` and `chore/doxygen` (in parallel), then `chore/release-workflow`.
+- **Branches**: `chore/publish-scripts` and `docs/user-and-admin-docs` (in parallel), then `chore/release-workflow`.
 
 #### 1.0.0-beta.N and 1.0.0-rc.N — Hardening
 
@@ -266,9 +266,10 @@ If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one
 
 | Choice | When |
 |--------|------|
-| Threshold and time window of "overloaded" | 0.3.0, calibrated on a real week |
+| Threshold and time window of "overloaded" | Defaults fixed in 0.3.0 (`state-definitions.md`); calibrated on a real week in 0.4.0, with the reader |
 | History computed from the files, or stored | 0.10.0, after the spike |
 | Where a team lives | 0.14.0, after the spike (default: a file of our own, outside `~/.claude`) |
 | Language of the interface (English only, texts in a resource file) | 0.5.0 |
 | Polling or file watching | 0.5.0, polling first, measured before any change |
 | A MVVM package, only if the hand-written view models become painful | 0.5.0 |
+| Logging convention (for example `[LoggerMessage]` and unique `EventId` values) | With the first code that writes logs |

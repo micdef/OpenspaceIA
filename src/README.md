@@ -1,10 +1,14 @@
 # Source projects
 
-One folder per project. No project yet: the projects are created with the first versions of the roadmap.
+One folder per project. Each project is created by the version of the roadmap that first needs it.
+
+| Project | Module | Contents |
+|---------|--------|----------|
+| `OpenSpaceIA.Core` | Core | The immutable model (`Model/`), the state rules (`States/`) and the read port (`Ports/Read/`); no dependency |
 
 ## Planned modules
 
-The architecture is a modular monolith, with a light hexagonal architecture (ports and adapters) inside the modules. The project names are fixed with the first code.
+The architecture is a modular monolith, with a light hexagonal architecture (ports and adapters) inside the modules. Each project is named `OpenSpaceIA.<Module>`, like `OpenSpaceIA.Core`.
 
 | Module | Role |
 |--------|------|

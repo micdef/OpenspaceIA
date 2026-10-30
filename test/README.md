@@ -1,6 +1,11 @@
 # Test projects
 
-One folder per test project. No project yet.
+One folder per test project. The settings and packages shared by every test project are in `test/Directory.Build.props`.
+
+| Project | Tests |
+|---------|-------|
+| `OpenSpaceIA.Architecture.Tests` | The architecture rules: the Core depends on nothing but the .NET base library (its project file and every type its code uses) |
+| `OpenSpaceIA.Core.Tests` | The core: every value of the model is checked when it is built (`Model/`); the state rules, with their thresholds (`States/`) |
 
 ## Running the tests
 
