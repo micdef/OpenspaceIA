@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Architecture rules of the solution: what each source project may depend on -->
+
+  <!-- Projects: every source project, so that its assembly can be analyzed -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenSpaceIA.Core\OpenSpaceIA.Core.csproj" />
+  </ItemGroup>
+
+  <!-- Packages (versions in Directory.Packages.props) -->
+  <ItemGroup>
+    <PackageReference Include="TngTech.ArchUnitNET" />
+  </ItemGroup>
+
+</Project>
