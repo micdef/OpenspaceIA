@@ -1,0 +1,20 @@
+<Project>
+  <!--
+    ┌──────────────┬──────────────────────────────────────────────────────────────┐
+    │ File         │ Directory.Packages.props                                     │
+    │ Scope        │ Every project of the solution                                │
+    │ Purpose      │ Central Package Management (CPM): one version per package    │
+    │              │ for the whole solution. Projects reference packages WITHOUT  │
+    │              │ a version.                                                   │
+    └──────────────┴──────────────────────────────────────────────────────────────┘
+  -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- A vulnerable transitive dependency can be pinned here without becoming a direct reference -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+  <!-- No package yet: each package is added, grouped by theme with a comment, by the version that first needs it
+       (doc/analyse/roadmap.md). -->
+</Project>

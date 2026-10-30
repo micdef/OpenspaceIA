@@ -73,7 +73,7 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 
 #### 0.3.0 — Core: model and state rules
 
-- **Content**: the written definition of the four states, of "overloaded" (threshold and time window, configurable) and of "under-used"; the Core project (machine, project, session, agent, task) with its read port; the state rules with an injectable clock; the first architecture rules (Core depends on nothing, with a positive control).
+- **Content**: the written definition of the four states, of "overloaded" (threshold and time window, configurable) and of "under-used"; the Core project (machine, project, session, agent, task) with its read port; the state rules with an injectable clock; the first architecture rules (Core depends on nothing, with a positive control); the CI no longer skips the test step when there is no test project (temporary skip of 0.1.0, removed here).
 - **Done**: named scenarios (at the desk, chaining without a break, waiting, resting) give the right state; the CI runs its first tests, with coverage and TRX reports.
 - **Tests**: written first (Kenobi); limit cases at the thresholds; fake clock; an agent is never working and idle at the same time.
 - **Branches**, in order: `docs/state-definitions`, `feature/core-model`, then `feature/state-rules` and `test/architecture-rules` (in parallel only if neither adds a package).

@@ -1,0 +1,42 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path=".gitattributes" />
+    <File Path=".gitignore" />
+    <File Path="CHANGELOG.md" />
+    <File Path="CONTRIBUTING.md" />
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="global.json" />
+    <File Path="LICENSE" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/.github/">
+    <File Path=".github/rulesets/protect-main-and-dev.json" />
+    <File Path=".github/rulesets/protect-release-branches.json" />
+    <File Path=".github/scripts/Test-ChangelogUntouched.ps1" />
+    <File Path=".github/scripts/Test-SolutionProjects.ps1" />
+    <File Path=".github/workflows/ci.yml" />
+  </Folder>
+  <Folder Name="/changelog/">
+    <File Path="changelog/unreleased/README.md" />
+  </Folder>
+  <Folder Name="/doc/">
+    <File Path="doc/adm/README.md" />
+    <File Path="doc/analyse/README.md" />
+    <File Path="doc/analyse/roadmap.md" />
+    <File Path="doc/assets/README.md" />
+    <File Path="doc/dev/README.md" />
+    <File Path="doc/user/README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <File Path="src/README.md" />
+  </Folder>
+  <Folder Name="/test/">
+    <File Path="test/README.md" />
+  </Folder>
+  <Folder Name="/tools/">
+    <File Path="tools/README.md" />
+    <File Path="tools/changelog/Merge-ChangelogFragments.ps1" />
+  </Folder>
+</Solution>

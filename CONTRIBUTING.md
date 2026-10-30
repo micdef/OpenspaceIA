@@ -87,7 +87,7 @@ New scopes are added to this table when a new area of the solution is created.
 - Every change reaches `main`, `dev` and `release/*` through a pull request opened against the parent branch.
 - The title follows the commit convention: `feat: add the street view`.
 - The description states the purpose, the main changes and how they were tested.
-- The changes are described in a **changelog fragment**, `changelog/unreleased/<branch>.md` (see [its README](changelog/unreleased/README.md)), never in `CHANGELOG.md` itself: the CI refuses a pull request that edits it, except `docs/release-X.Y.Z`.
+- The changes are described in a **changelog fragment**, `changelog/unreleased/<branch>.md` (see [its README](changelog/unreleased/README.md)), never in `CHANGELOG.md` itself: the CI refuses a pull request into a release branch that edits it, except `docs/release-X.Y.Z`.
 - **Two pull requests open at the same time never touch the same file**, so that none of them ever has a merge conflict; a pull request that needs a file of another open one is opened once that one is merged.
 - The build must pass and every review thread must be resolved before merging.
 - **Only the repository owner merges a pull request.** Nobody else, including AI assistants, merges.
@@ -108,6 +108,11 @@ GitHub rulesets enforce these rules; nobody can bypass them, including the repos
 | Merge commit only                      | ✅            | ✅          |
 | Force push forbidden                   | ✅            | ✅          |
 | Deletion forbidden                     | ✅            | ❌ (deleted automatically once merged into `dev`) |
+
+The two rulesets are kept in [.github/rulesets](.github/rulesets), as exported from GitHub. The repository owner creates one
+again with `gh api -X POST repos/<owner>/<repository>/rulesets --input .github/rulesets/<file>.json`, and exports it again
+after any change made on GitHub. The `Build and test` check is the name of the job of [ci.yml](.github/workflows/ci.yml):
+renaming the job means changing the rulesets too.
 
 ### History
 

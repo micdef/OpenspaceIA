@@ -1,0 +1,106 @@
+# ┌──────────────┬──────────────────────────────────────────────────────────────┐
+# │ File         │ .github/workflows/ci.yml                                     │
+# │ Purpose      │ Builds and tests the solution on every pull request to a     │
+# │              │ shared branch, and after every merge into main or dev.       │
+# │              │ A failing run blocks the pull request (see CONTRIBUTING.md). │
+# │ Origin       │ BoardGamesPlatform, without its solution filter (no SQL      │
+# │              │ project here).                                               │
+# └──────────────┴──────────────────────────────────────────────────────────────┘
+
+name: CI
+
+on:
+  pull_request:
+    branches: [main, dev, 'release/**']
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+# Read-only token: the workflow never writes to the repository
+permissions:
+  contents: read
+
+# A new push to the same pull request cancels the run in progress; a run after a merge into main or dev is never cancelled
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    # This name is the check required by the branch rulesets: change both together
+    name: Build and test
+    # Windows first; a Linux job comes with the desktop application (0.5.0, doc/analyse/roadmap.md)
+    runs-on: windows-latest
+    timeout-minutes: 15
+
+    steps:
+      # Full history: the changelog check compares the pull request with its target branch
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Install the .NET SDK pinned in global.json
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Check that the solution matches the projects on disk
+        run: ./.github/scripts/Test-SolutionProjects.ps1
+
+      # Pull requests only: a merge into main or dev has no base to compare with.
+      # The branch names go through environment variables, never written into the script: a branch name may hold
+      # characters such as ' $ ( that would otherwise run as code (script injection).
+      - name: Check that CHANGELOG.md is not edited (changelog fragments instead)
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: ./.github/scripts/Test-ChangelogUntouched.ps1 -BaseRef $env:BASE_REF -HeadRef $env:HEAD_REF
+
+      - name: Restore
+        run: dotnet restore OpenSpaceIA.slnx
+
+      - name: Build (warnings are errors)
+        run: dotnet build OpenSpaceIA.slnx --configuration Release --no-restore
+
+      # Rules the build does not enforce: line endings and the other .editorconfig rules
+      - name: Check code style (.editorconfig)
+        run: dotnet format OpenSpaceIA.slnx --verify-no-changes --no-restore
+
+      # The test step needs at least one test project (the first one comes in 0.3.0); until then it is skipped, and says so.
+      # Every project under test/ counts, whatever its name, so that a test project is never skipped by mistake.
+      # Temporary: 0.3.0 removes this step and the two conditions below (doc/analyse/roadmap.md).
+      - name: Find the test projects
+        id: tests
+        shell: pwsh
+        run: |
+          $count = @(if (Test-Path test) { Get-ChildItem -Path test -Filter '*.csproj' -Recurse -File }).Count
+          Write-Host "$count test project(s) found."
+          if ($count -eq 0) { Write-Host '::notice::No test project yet: the test step is skipped.' }
+          "count=$count" >> $env:GITHUB_OUTPUT
+
+      # After "--", every option applies to each test project: a test project that runs no test fails the run.
+      # Each test project writes its TRX report and its Cobertura coverage report to TestResults/. No threshold yet.
+      - name: Test
+        if: steps.tests.outputs.count != '0'
+        run: >-
+          dotnet test --solution OpenSpaceIA.slnx --configuration Release --no-build
+          --results-directory TestResults
+          -- --minimum-expected-tests 1
+          --report-trx
+          --coverage --coverage-output-format cobertura
+
+      # Published even when the tests fail, to read the TRX reports; not when an earlier step failed (no test was run,
+      # and an upload error would hide the real cause), nor when the run is cancelled
+      - name: Publish the test and coverage reports
+        if: ${{ !cancelled() && steps.tests.outcome == 'success' && steps.tests.outputs.count != '0' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results
+          path: TestResults/
+          if-no-files-found: error
