@@ -28,6 +28,7 @@
     <File Path="doc/analyse/roadmap.md" />
     <File Path="doc/analyse/spike-claude-files.md" />
     <File Path="doc/analyse/spike-waiting-signal.md" />
+    <File Path="doc/analyse/state-definitions.md" />
     <File Path="doc/assets/README.md" />
     <File Path="doc/dev/README.md" />
     <File Path="doc/user/README.md" />
