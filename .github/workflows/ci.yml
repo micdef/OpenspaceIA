@@ -72,22 +72,10 @@ jobs:
       - name: Check code style (.editorconfig)
         run: dotnet format OpenSpaceIA.slnx --verify-no-changes --no-restore
 
-      # The test step needs at least one test project (the first one comes in 0.3.0); until then it is skipped, and says so.
-      # Every project under test/ counts, whatever its name, so that a test project is never skipped by mistake.
-      # Temporary: 0.3.0 removes this step and the two conditions below (doc/analyse/roadmap.md).
-      - name: Find the test projects
-        id: tests
-        shell: pwsh
-        run: |
-          $count = @(if (Test-Path test) { Get-ChildItem -Path test -Filter '*.csproj' -Recurse -File }).Count
-          Write-Host "$count test project(s) found."
-          if ($count -eq 0) { Write-Host '::notice::No test project yet: the test step is skipped.' }
-          "count=$count" >> $env:GITHUB_OUTPUT
-
       # After "--", every option applies to each test project: a test project that runs no test fails the run.
       # Each test project writes its TRX report and its Cobertura coverage report to TestResults/. No threshold yet.
       - name: Test
-        if: steps.tests.outputs.count != '0'
+        id: tests
         run: >-
           dotnet test --solution OpenSpaceIA.slnx --configuration Release --no-build
           --results-directory TestResults
@@ -98,7 +86,7 @@ jobs:
       # Published even when the tests fail, to read the TRX reports; not when an earlier step failed (no test was run,
       # and an upload error would hide the real cause), nor when the run is cancelled
       - name: Publish the test and coverage reports
-        if: ${{ !cancelled() && steps.tests.outcome == 'success' && steps.tests.outputs.count != '0' }}
+        if: ${{ !cancelled() && (steps.tests.outcome == 'success' || steps.tests.outcome == 'failure') }}
         uses: actions/upload-artifact@v7
         with:
           name: test-results

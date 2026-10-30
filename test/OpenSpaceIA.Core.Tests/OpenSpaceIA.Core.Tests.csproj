@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Tests of the Core: the rules of the model, written first (packages and settings in test/Directory.Build.props) -->
+
+  <!-- Projects -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenSpaceIA.Core\OpenSpaceIA.Core.csproj" />
+  </ItemGroup>
+
+</Project>
