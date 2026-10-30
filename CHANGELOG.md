@@ -27,5 +27,9 @@ Repository bootstrap and project framing: purpose, architecture, stack, design a
 - Solution `OpenSpaceIA.slnx`, with the repository files in solution folders; no project yet.
 - Branch protection: the `Build and test` check of the CI is now required on `main`, `dev` and `release/*`; the two GitHub rulesets are kept in `.github/rulesets/`, and the contribution guide says how to create them again.
 
+### Fixed
+
+- CI: the changelog check now applies only to pull requests into a release branch, so that the pull requests that move a version up into `dev` and `main`, which carry the finalized changelog, are no longer refused.
+
 [Unreleased]: https://github.com/micdef/OpenspaceIA/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/micdef/OpenspaceIA/releases/tag/v0.1.0
