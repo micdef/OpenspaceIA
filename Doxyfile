@@ -36,15 +36,19 @@ FILE_PATTERNS          = *.cs
 RECURSIVE              = YES
 EXCLUDE_PATTERNS       = */bin/* */obj/*
 INPUT_ENCODING         = UTF-8
+# Doxygen 1.18 does not know the C# "record" keyword: each C# file is read through a filter that presents the records as
+# classes and structs, without changing the source (PowerShell 7 must be installed; the path is relative to this folder)
+FILTER_PATTERNS        = *.cs="pwsh -NoProfile -File tools/doxygen/Convert-RecordsForDoxygen.ps1"
 # Images used by the Markdown pages (copied into the HTML output)
 IMAGE_PATH             = doc/assets/mockups
 
 #---------------------------------------------------------------------------
-# Extraction: only documented members are published; private members are documented too (coding conventions), so they
-# are published for the developers
+# Extraction: only documented members are published; private members and internal types are documented too (coding
+# conventions), so they are published for the developers
 #---------------------------------------------------------------------------
 EXTRACT_ALL            = NO
 EXTRACT_PRIVATE        = YES
+EXTRACT_PACKAGE        = YES
 EXTRACT_STATIC         = YES
 HIDE_UNDOC_MEMBERS     = YES
 HIDE_UNDOC_CLASSES     = YES

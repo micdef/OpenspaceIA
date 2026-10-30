@@ -121,11 +121,12 @@ public sealed record Project
     /// Method used to remove the trailing separators of a path
     /// </summary>
     /// <remarks>
-    /// <para><b>Purpose:</b> <c>C:\Alpha</c> and <c>C:\Alpha\</c> are the same folder; without this, "overloaded" would count
+    /// <para><b>Purpose:</b> <c>C:/Alpha</c> and <c>C:/Alpha/</c> are the same folder; without this, "overloaded" would count
     /// it as two projects.</para>
     /// <para><b>Behavior:</b> every trailing separator is removed, except for a root, which keeps one: a drive keeps the first
-    /// separator after its colon (<c>C:\\</c> gives <c>C:\</c>, because <c>C:</c> alone is another path on Windows), and a path
-    /// made only of separators (<c>/</c>) is kept as given. Nothing else is changed: no case, no white space.</para>
+    /// separator after its colon (<c>C://</c> gives <c>C:/</c>, because <c>C:</c> alone is another path on Windows), and a path
+    /// made only of separators (<c>/</c>) is kept as given. Nothing else is changed: no case, no white space. The examples use
+    /// the slash; the backslash works the same way.</para>
     /// </remarks>
     /// <param name="path">[Cannot be null] Path of the folder, already checked</param>
     /// <returns>The path without its trailing separators</returns>
@@ -158,8 +159,8 @@ public sealed record Project
     /// <remarks>
     /// <para><b>Purpose:</b> the screens show a short name, not a full path.</para>
     /// <para><b>Behavior:</b> the trailing separators are ignored, then the text after the last separator is the name
-    /// (<c>C:\Users\dev\Alpha\</c> gives <c>Alpha</c>, <c>C:\</c> gives <c>C:</c>). A path made only of separators has no
-    /// segment: its name is the path itself.</para>
+    /// (<c>C:/Users/dev/Alpha/</c> gives <c>Alpha</c>, <c>C:/</c> gives <c>C:</c>). A path made only of separators has no
+    /// segment: its name is the path itself. The examples use the slash; the backslash works the same way.</para>
     /// </remarks>
     /// <param name="path">[Cannot be null] Path of the folder, already normalized</param>
     /// <returns>The name of the project</returns>
