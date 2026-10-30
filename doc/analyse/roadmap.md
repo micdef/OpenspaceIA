@@ -78,7 +78,7 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 - **Content**: the written definition of the four states, of "overloaded" (threshold and time window, configurable) and of "under-used"; the Core project (machine, project, session, agent, task) with its read port; the state rules with an injectable clock; the first architecture rules (Core depends on nothing, with a positive control); the CI no longer skips the test step when there is no test project (temporary skip of 0.1.0, removed here).
 - **Done**: named scenarios (at the desk, chaining without a break, waiting, resting) give the right state; the CI runs its first tests, with coverage and TRX reports.
 - **Tests**: written first (Kenobi); limit cases at the thresholds; fake clock; an agent is never working and idle at the same time.
-- **Branches**, in order: `docs/state-definitions`, `feature/core-model`, then `feature/state-rules` and `test/architecture-rules` (in parallel only if neither adds a package).
+- **Branches**, in order: `docs/state-definitions`, `docs/coding-conventions`, `chore/doxygen` (the `Doxyfile`, moved here from 0.15.0 so that the documentation of the first code can be generated), `feature/core-model`, then `feature/state-rules` and `test/architecture-rules` (in parallel only if neither adds a package).
 
 #### 0.4.0 — The reader of `~/.claude`
 
@@ -165,9 +165,9 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 
 #### 0.15.0 — Packaging and hardening
 
-- **Content**: self-contained publication for `win-x64` and `linux-x64`; the release workflow on a tag; the Doxygen configuration (`doc/dev`, HTML not versioned); the user and administrator documentation; a security review by Ackbar and Cassian, on request of the project lead (read-only access to `~/.claude`, writing limits, no network output, dependencies).
+- **Content**: self-contained publication for `win-x64` and `linux-x64`; the release workflow on a tag; the user and administrator documentation; a security review by Ackbar and Cassian, on request of the project lead (read-only access to `~/.claude`, writing limits, no network output, dependencies).
 - **Done**: the package installs on a clean Windows machine and a clean Linux machine.
-- **Branches**: `chore/publish-scripts`, `docs/user-and-admin-docs` and `chore/doxygen` (in parallel), then `chore/release-workflow`.
+- **Branches**: `chore/publish-scripts` and `docs/user-and-admin-docs` (in parallel), then `chore/release-workflow`.
 
 #### 1.0.0-beta.N and 1.0.0-rc.N — Hardening
 
