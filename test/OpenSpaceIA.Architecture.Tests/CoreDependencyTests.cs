@@ -6,17 +6,14 @@
  */
 
 // Using
-using System.Reflection;
 using System.Text.RegularExpressions;
-using System.Xml.Linq;
-using ArchUnitNET.Loader;
 using OpenSpaceIA.Core.Model;
 
 // Static using
 // #N/A
 
 // Named using
-using ArchitectureModel = ArchUnitNET.Domain.Architecture;
+// #N/A
 
 // Namespace
 namespace OpenSpaceIA.Architecture.Tests;
@@ -27,13 +24,10 @@ namespace OpenSpaceIA.Architecture.Tests;
 /// <remarks>
 /// <para><b>Purpose:</b> the Core knows neither the user interface nor the format of the files (src/README.md); a dependency
 /// added by mistake breaks the CI before it can be merged.</para>
-/// <para><b>Behavior:</b> two levels. The project file of the Core is read, so that a reference is refused even before it is
-/// used. The compiled assembly is read by ArchUnitNET, which sees every type used by the code (method bodies, generic
-/// arguments and attributes included); the rule checks the namespace of each type used by any type of the assembly, the
-/// global namespace included. The rule reads the types used directly rather than through the fluent syntax of ArchUnitNET,
-/// which only matches the types it has loaded: the types of System are forwarded to an assembly the loader does not read,
-/// so a fluent control could not prove that they are seen. Reading them directly, a control can, and the rule names the
-/// type at fault.</para>
+/// <para><b>Behavior:</b> two levels, read by <see cref="DependencyReader"/>. The project file of the Core is read, so that
+/// a reference is refused even before it is used; the namespace of every type used by the assembly of the Core is checked,
+/// the global namespace included, and the rule names the type at fault. A control proves that the types used really include
+/// external ones.</para>
 /// </remarks>
 public sealed class CoreDependencyTests
 {
@@ -54,9 +48,9 @@ public sealed class CoreDependencyTests
     private static readonly Regex _allowedNamespaces = new Regex(@"^(OpenSpaceIA\.Core|System)(\..*)?$", RegexOptions.CultureInvariant);
 
     /// <summary>
-    /// Compiled assembly of the Core with its dependencies, loaded once for every rule
+    /// Types used by the assembly of the Core, read once for every rule
     /// </summary>
-    private static readonly ArchitectureModel _coreArchitecture = LoadCoreArchitecture();
+    private static readonly List<(string TypeName, string NamespaceName)> _typesUsed = DependencyReader.GetTypesUsed(typeof(Project).Assembly);
 
     #endregion
 
@@ -112,53 +106,7 @@ public sealed class CoreDependencyTests
 
     #region Privates
 
-    /// <summary>
-    /// Method used to load the compiled assembly of the Core with its dependencies
-    /// </summary>
-    /// <returns>The architecture model of the Core</returns>
-    private static ArchitectureModel LoadCoreArchitecture()
-    {
-        // Getting the assembly from one of its types
-        Assembly coreAssembly = typeof(Project).Assembly;
-
-        // Function's return
-        return new ArchLoader().LoadAssembliesIncludingDependencies(coreAssembly).Build();
-    }
-
-    /// <summary>
-    /// Method used to list the types used by the types of the Core
-    /// </summary>
-    /// <returns>The full names of the types used, each with the namespace it lives in</returns>
-    private static List<(string TypeName, string NamespaceName)> GetTypesUsedByTheCore()
-    {
-        // Function's return: every type used by any type of the assembly of the Core, whatever its namespace
-        string coreAssemblyName = typeof(Project).Assembly.FullName!;
-        return _coreArchitecture.Types
-            .Where(type => type.Assembly.FullName == coreAssemblyName)
-            .SelectMany(type => type.Dependencies)
-            .Select(dependency => (TypeName: dependency.Target.FullName, NamespaceName: dependency.Target.Namespace.FullName))
-            .Distinct()
-            .ToList();
-    }
-
-    /// <summary>
-    /// Method used to find the project file of the Core from the folder of the tests
-    /// </summary>
-    /// <returns>The full path of OpenSpaceIA.Core.csproj</returns>
-    /// <exception cref="FileNotFoundException">If no folder above the tests holds the solution file</exception>
-    private static string FindCoreProjectFile()
-    {
-        // Going up from the folder of the tests to the root of the repository, which holds the solution file
-        DirectoryInfo? folder = new DirectoryInfo(AppContext.BaseDirectory);
-        while (folder is not null && !File.Exists(Path.Combine(folder.FullName, "OpenSpaceIA.slnx")))
-            folder = folder.Parent;
-
-        if (folder is null)
-            throw new FileNotFoundException($"The solution file OpenSpaceIA.slnx was not found above {AppContext.BaseDirectory}");
-
-        // Function's return
-        return Path.Combine(folder.FullName, "src", "OpenSpaceIA.Core", "OpenSpaceIA.Core.csproj");
-    }
+    // #N/A
 
     #endregion
 
@@ -177,7 +125,7 @@ public sealed class CoreDependencyTests
     public void TypesUsedByTheCoreIncludeExternalTypes()
     {
         // Listing the namespaces used
-        List<string> namespaces = GetTypesUsedByTheCore().Select(used => used.NamespaceName).Distinct().ToList();
+        List<string> namespaces = _typesUsed.Select(used => used.NamespaceName).Distinct().ToList();
 
         // Checking that a namespace that is used for sure is seen
         namespaces.ShouldContain("System.Collections.Generic");
@@ -190,7 +138,7 @@ public sealed class CoreDependencyTests
     public void CoreTypesDependOnNothingElse()
     {
         // Listing the types used that live outside the allowed namespaces
-        List<string> forbidden = GetTypesUsedByTheCore()
+        List<string> forbidden = _typesUsed
             .Where(used => !_allowedNamespaces.IsMatch(used.NamespaceName))
             .Select(used => used.TypeName)
             .ToList();
@@ -211,11 +159,7 @@ public sealed class CoreDependencyTests
     public void CoreProjectFileHasNoReference()
     {
         // Reading the references of the project file
-        XDocument project = XDocument.Load(FindCoreProjectFile());
-        List<string> references = project.Descendants()
-            .Where(element => element.Name.LocalName is "ProjectReference" or "PackageReference" or "Reference" or "FrameworkReference" or "COMReference")
-            .Select(element => $"{element.Name.LocalName} {(string?)element.Attribute("Include")}")
-            .ToList();
+        List<string> references = DependencyReader.GetProjectReferences("OpenSpaceIA.Core");
 
         // Checking that there is none
         references.ShouldBeEmpty("OpenSpaceIA.Core must depend on nothing");
