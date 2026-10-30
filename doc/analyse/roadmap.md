@@ -272,3 +272,4 @@ If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one
 | Language of the interface (English only, texts in a resource file) | 0.5.0 |
 | Polling or file watching | 0.5.0, polling first, measured before any change |
 | A MVVM package, only if the hand-written view models become painful | 0.5.0 |
+| Logging convention (for example `[LoggerMessage]` and unique `EventId` values) | With the first code that writes logs |
