@@ -11,6 +11,9 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/changelog/">
+    <File Path="changelog/unreleased/README.md" />
+  </Folder>
   <Folder Name="/doc/">
     <File Path="doc/adm/README.md" />
     <File Path="doc/analyse/README.md" />
@@ -27,5 +30,6 @@
   </Folder>
   <Folder Name="/tools/">
     <File Path="tools/README.md" />
+    <File Path="tools/changelog/Merge-ChangelogFragments.ps1" />
   </Folder>
 </Solution>
