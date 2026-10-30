@@ -138,7 +138,7 @@ Consequences for the reader (0.4.0):
 | Question | Where it is decided |
 |----------|---------------------|
 | Is a session file deleted at the end of a session, or after a crash? | `claude-model-decisions` (rule: a file whose process is gone is a closed session) |
-| Does a permission prompt set `status: waiting`? | Second measurement, see `spike-waiting-signal.md` |
+| ~~Does a permission prompt set `status: waiting`?~~ | **Yes**, measured: see `spike-waiting-signal.md` |
 | Which task list tool does a command-line session use? | Checked with a command-line session before the reader (0.4.0) |
-| Does Claude Code delete old transcripts (history of 7 days)? | `claude-model-decisions` |
+| ~~Does Claude Code delete old transcripts (history of 7 days)?~~ | After 30 days by default (`cleanupPeriodDays`); the sessions of Claude Desktop are exempt from this limit by default: see `claude-model-decisions.md` |
 | The exact encoding of folder names | Not needed: the path is read from `cwd` |

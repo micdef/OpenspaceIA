@@ -15,7 +15,7 @@ Version 0.2.0 (`roadmap.md`). Question: can the application tell, from the files
 | Situation | Detected? | How |
 |-----------|-----------|-----|
 | **Claude asks the user a question** | **Yes, verified** | `status` of `sessions/<pid>.json` becomes **`waiting`** for as long as the question is open, then goes back to `busy` |
-| Claude waits for a **permission** | **Not verified** | No permission prompt could be triggered in the session used (see below) |
+| Claude waits for a **permission** | **Yes, verified** (second measurement) | `status` becomes **`waiting`** while the permission prompt is shown; the tool call stays open in the transcript |
 | A permission was **refused** by the user | Yes, after the fact | the tool result carries `toolDenialKind: "user-rejected"` |
 | A question was **answered** by the user | Yes, after the fact | the tool result carries `permissionDecision.source: "user_temporary"` |
 
@@ -27,7 +27,7 @@ Each running session has a file `~/.claude/sessions/<pid>.json`. Its `status` fi
 |-------|--------------------|
 | `busy` | Claude is working (thinking or running a tool) |
 | `waiting` | Claude waits for the user: an open question, observed below |
-| `idle` | The turn is over (observed on sessions that had finished their turn; not measured during this spike) |
+| `idle` | The turn is over (measured in the second measurement below) |
 
 The file also holds `statusUpdatedAt`, the time of the last change of `status`.
 
@@ -70,17 +70,37 @@ Values seen in one real session (about 1 290 tool results):
 
 A refused tool call also carries `toolDenialKind`: `"user-rejected"` (refused by the user) or `"permission-rule"` (refused by a rule).
 
-**Not verified:** the `status` of a session **while a permission prompt is shown**. The session of this spike runs in
-automatic mode: a call that could need a permission (a web page on a new domain) was accepted by the classifier, with no
-prompt, and the status stayed `busy`. The decision records above are written only **after** the user decides; they do not
-show a pending prompt. Expected (not verified): `waiting`, as for a question.
+The decision records above are written only **after** the user decides; they do not show a pending prompt. In the first
+session (automatic mode), no prompt could be triggered: a call to a new web domain was accepted by the classifier and the
+status stayed `busy`. Hence the second measurement.
+
+### Second measurement: a permission prompt
+
+The author opened a second session in the normal mode (his rules allow every shell command and the files of the project
+and of `~/.claude`, so the session was asked to read a file outside its folder) and waited before answering. The status
+of that session was recorded every second.
+
+| Time | What happens | `status` | Transcript |
+|------|--------------|----------|------------|
+| 14:14:43 | The session asks the user a question | **`waiting`** | `tool_use` `AskUserQuestion`, open |
+| 14:15:57 | The user answers | `busy` | `tool_result`, `source: "user_temporary"`, `grantScope: "once"` |
+| 14:16:00 | The session wants to read a file outside its folder | `busy` | `tool_use` `Read`, open |
+| 14:16:03 | **The permission prompt waits for the user** | **`waiting`** | still open |
+| 14:17:02 | The user accepts | `busy` (14:17:04) | `tool_result`, `source: "user_temporary"`, `grantScope: "once"` |
+| 14:17:11 | End of the turn | **`idle`** | — |
+
+What it shows:
+
+- **`waiting` covers both cases**: a question and a permission prompt.
+- **The reason is the tool call left open** while the status is `waiting`: `AskUserQuestion` is a question, any other tool
+  is a permission prompt.
+- For a permission, the tool call reaches the transcript **before** the status changes (about 3 seconds); for a question,
+  the order was not the same in the two measurements (the status first, then the record, or both together). The
+  application must therefore join the two without relying on their order.
 
 ## 4. Consequences for OpenSpaceIA
 
-- **The waiting signal is the `status` field**, read in the session file. It is cheap (one small file per session) and it is
-  the earliest signal. The transcript (open `AskUserQuestion`) confirms it and tells *why* Claude waits.
-- **No fallback is needed for questions.** For permissions, a second measurement is planned: the author opens a session in
-  the default mode, asks for a command that needs his approval, and waits about 20 seconds before answering, while the
-  status of that session is recorded.
-- The rest of the decisions (the states that can be detected, what happens if a permission prompt is not seen as
-  `waiting`) are taken in `claude-model-decisions` (0.2.0).
+- **The waiting signal is the `status` field**, read in the session file. It is cheap (one small file per session). The
+  transcript tells *why* Claude waits: the tool call left open.
+- **No fallback is needed**: questions and permission prompts are both seen as `waiting`.
+- The decisions that follow are written in [claude-model-decisions.md](claude-model-decisions.md).
