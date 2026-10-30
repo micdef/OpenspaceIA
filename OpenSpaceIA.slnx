@@ -11,6 +11,11 @@
     <File Path="LICENSE" />
     <File Path="README.md" />
   </Folder>
+  <Folder Name="/.github/">
+    <File Path=".github/scripts/Test-ChangelogUntouched.ps1" />
+    <File Path=".github/scripts/Test-SolutionProjects.ps1" />
+    <File Path=".github/workflows/ci.yml" />
+  </Folder>
   <Folder Name="/changelog/">
     <File Path="changelog/unreleased/README.md" />
   </Folder>
