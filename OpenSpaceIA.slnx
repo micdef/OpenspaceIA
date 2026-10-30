@@ -48,5 +48,6 @@
   <Folder Name="/tools/">
     <File Path="tools/README.md" />
     <File Path="tools/changelog/Merge-ChangelogFragments.ps1" />
+    <File Path="tools/doxygen/Convert-RecordsForDoxygen.ps1" />
   </Folder>
 </Solution>
