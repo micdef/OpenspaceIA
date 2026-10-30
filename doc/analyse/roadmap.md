@@ -36,6 +36,7 @@ Prepared by Mon Mothma (`planner`), reviewed by Claude, validated by Michaël De
 - **A tool, an abstraction or a package is added only by the version that needs it.** An architecture rule is added with the project it protects.
 - **Tests from the start.** The core rules and the reader are written tests first (Kenobi).
 - **Threat analysis before the code it covers**: writing agents (0.12.0), the network (1.1.0), the elevation prompt (1.5.0), the web (1.6.0).
+- **Network addresses are configuration, never code.** Wherever there is network, the IP address and the port of each application (hub, collector, clients) can be changed in its configuration file; the code only holds the documented defaults.
 - **Security-sensitive work is marked [SEC].** It is written by the main developer, never by a coder agent, and reviewed by the agents and by the project lead.
 - **`~/.claude` is sensitive and untrusted.** The application reads it and never writes to it, except agent files created on purpose from 0.12.0; it sends nothing to a third party; the text of the transcripts is plain text, never rendered as HTML, never run.
 
@@ -174,7 +175,7 @@ Each version is a release with packages. A fix between two versions goes through
 
 #### 1.1.0 — Network: threat model and contract
 
-- **Content**: documents only: the threat model of the network (collector ↔ hub ↔ clients), the wire contract and the ports, the choice of the authentication (one identity per collector, so that one machine can be removed without touching the others), TLS.
+- **Content**: documents only: the threat model of the network (collector ↔ hub ↔ clients), the wire contract and the ports (the default ports, all changeable in the configuration of each application, and the **range of ports reserved for the network tests**), the choice of the authentication (one identity per collector, so that one machine can be removed without touching the others), TLS.
 - **Branches**: `docs/threat-model-network`, `docs/wire-contract-and-ports`, `docs/authentication-choice`.
 
 #### 1.2.0 — Hub [SEC]
@@ -217,7 +218,7 @@ If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one
 | Reader | Invented fixtures, broken and large files, read-only folder, full file sharing | 0.4.0 |
 | Desktop | View models; plain text only; discreet mode | 0.5.0 |
 | Writer | Allowed paths, backup before write, failed write leaves the previous state | 0.12.0 |
-| Network | Loopback sockets on port 0, authentication, reconnection; several runs | 1.2.0 |
+| Network | Loopback sockets on ports taken from the range reserved for the tests (1.1.0), so that test runs can work in parallel without conflicts; authentication, reconnection; several runs | 1.2.0 |
 
 - Test projects live in `test/` and all run in the CI; tests never use a real transcript.
 - Tests wait for events, never for fixed delays; the only accepted delay is one that proves an event does **not** happen, and it is documented on the test.
