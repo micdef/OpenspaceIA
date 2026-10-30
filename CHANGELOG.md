@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-30
+
+The Core: the immutable model of the office and the rules that judge the workload of the agents, written first as tests, with no dependency; no user interface yet.
+
+### Added
+
+- State definitions (`doc/analyse/state-definitions.md`): an agent is an agent type, and the chief is one of them; the state at a given moment (working, waiting for you with its reason, idle); overloaded (over the last 2 hours, at least 2 projects and no break of 10 minutes or more); under-used (idle at least 90 % of the last 7 days); every value is a default that the user can change. Then the periods given to the rules, the merge of the periods that overlap, and how the thresholds are read (the start and the end of the window count as breaks; a period counts only for a part of more than zero inside the window).
+- Coding conventions (`doc/dev/coding-conventions.md`): file headers, usings, regions, documentation of every member, step comments and code rules for C#; and the tests, named in PascalCase by the rule they prove, with "now" as a parameter and invented data only.
+- Doxygen configuration (`Doxyfile` at the root): the HTML documentation of `src/`, with the README as main page and the contribution guide, the changelog, the analysis documents and the coding conventions; private members are published too, since they are documented. The output in `doc/dev/html/` is not versioned.
+- Core project (`src/OpenSpaceIA.Core`): the immutable model of the office (machine, project, session of the chief, agent type, run of a sub-agent, task of a task list, period of work or of waiting, snapshot of the activity) and its read port. Every value is checked when it is built (times in UTC, a reason for every waiting session, lists copied); the path of a project loses its trailing separators, so that one folder is always one project. The project depends on nothing.
+- State rules of the Core (`src/OpenSpaceIA.Core/States`): the state of the moment of the chief and of an agent type (working, waiting for you, idle), "overloaded" and "under-used", computed from the periods of an agent with "now" and the settings (`StateSettings`, with their defaults) as parameters, never the clock.
+- First test projects, with the shared test settings (`test/Directory.Build.props`: xUnit v3 on Microsoft.Testing.Platform, Shouldly, code coverage and TRX reports): `test/OpenSpaceIA.Core.Tests` for the model and the rules, written first, with the limit cases at every threshold.
+- Architecture rules (`test/OpenSpaceIA.Architecture.Tests`): the Core depends on nothing but the .NET base library. Its project file has no project, package, assembly or framework reference, and every type its code uses (method bodies, generic arguments and attributes included, read by ArchUnitNET) lives in `System.*` or in the Core; a control proves that the external types are really seen.
+- Roslynator analyzers for every project, so that the build enforces the Roslynator rules of `.editorconfig`.
+- Roadmap: the logging convention is decided with the first code that writes logs.
+
+### Changed
+
+- Roadmap: the Doxygen configuration moves from 0.15.0 to 0.3.0, so that the documentation of the first code can be generated.
+- CI: the test step always runs; the temporary skip used while there was no test project is removed.
+
 ## [0.2.0] - 2026-10-30
 
 Spike on the files of Claude Code: the risky unknowns are proven on real files, before any product code; no code yet.
@@ -46,6 +67,7 @@ Repository bootstrap and project framing: purpose, architecture, stack, design a
 
 - CI: the changelog check now applies only to pull requests into a release branch, so that the pull requests that move a version up into `dev` and `main`, which carry the finalized changelog, are no longer refused.
 
-[Unreleased]: https://github.com/micdef/OpenspaceIA/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/micdef/OpenspaceIA/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/micdef/OpenspaceIA/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/micdef/OpenspaceIA/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/micdef/OpenspaceIA/releases/tag/v0.1.0
