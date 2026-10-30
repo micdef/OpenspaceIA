@@ -24,12 +24,14 @@
     <GlobalPackageReference Include="Roslynator.Formatting.Analyzers" Version="5.0.1" />
   </ItemGroup>
 
-  <!-- Tests: xUnit v3 on Microsoft.Testing.Platform, Test Explorer adapter, assertions, coverage and TRX extensions -->
+  <!-- Tests: xUnit v3 on Microsoft.Testing.Platform, Test Explorer adapter, assertions, coverage and TRX extensions,
+       architecture rules -->
   <ItemGroup>
     <PackageVersion Include="xunit.v3" Version="4.0.2" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.12.0" />
     <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.5.2" />
+    <PackageVersion Include="TngTech.ArchUnitNET" Version="0.13.5" />
   </ItemGroup>
 </Project>

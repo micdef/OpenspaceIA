@@ -42,6 +42,7 @@
   <Folder Name="/test/">
     <File Path="test/Directory.Build.props" />
     <File Path="test/README.md" />
+    <Project Path="test/OpenSpaceIA.Architecture.Tests/OpenSpaceIA.Architecture.Tests.csproj" />
     <Project Path="test/OpenSpaceIA.Core.Tests/OpenSpaceIA.Core.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
