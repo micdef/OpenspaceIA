@@ -37,9 +37,12 @@
   </Folder>
   <Folder Name="/src/">
     <File Path="src/README.md" />
+    <Project Path="src/OpenSpaceIA.Core/OpenSpaceIA.Core.csproj" />
   </Folder>
   <Folder Name="/test/">
+    <File Path="test/Directory.Build.props" />
     <File Path="test/README.md" />
+    <Project Path="test/OpenSpaceIA.Core.Tests/OpenSpaceIA.Core.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <File Path="tools/README.md" />

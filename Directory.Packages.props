@@ -15,6 +15,21 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
-  <!-- No package yet: each package is added, grouped by theme with a comment, by the version that first needs it
-       (doc/analyse/roadmap.md). -->
+  <!-- Each package is added, grouped by theme with a comment, by the version that first needs it (doc/analyse/roadmap.md) -->
+
+  <!-- Analyzers applied to every project, with no reference in the .csproj files; the Roslynator rules are set in
+       .editorconfig (for example RCS1250: explicit object creation) -->
+  <ItemGroup>
+    <GlobalPackageReference Include="Roslynator.Analyzers" Version="5.0.1" />
+    <GlobalPackageReference Include="Roslynator.Formatting.Analyzers" Version="5.0.1" />
+  </ItemGroup>
+
+  <!-- Tests: xUnit v3 on Microsoft.Testing.Platform, Test Explorer adapter, assertions, coverage and TRX extensions -->
+  <ItemGroup>
+    <PackageVersion Include="xunit.v3" Version="4.0.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
+    <PackageVersion Include="Shouldly" Version="4.3.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.CodeCoverage" Version="18.12.0" />
+    <PackageVersion Include="Microsoft.Testing.Extensions.TrxReport" Version="2.5.2" />
+  </ItemGroup>
 </Project>
