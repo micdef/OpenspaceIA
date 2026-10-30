@@ -21,7 +21,7 @@ the core (0.3.0) and the reader (0.4.0) will follow.
 | 6 | **History** | Computed again from the transcripts, with **no storage of our own** | Transcripts are kept 30 days by default (`cleanupPeriodDays`), and the sessions of Claude Desktop are exempt from this limit by default (Claude Code documentation, "Data usage"); the history needs 7 days |
 | 7 | **The real model** | `message.model` of the transcript. The `model` of a `meta.json` is only the model asked at launch, and is often missing | Observed |
 | 8 | **Task list** | Rebuilt by replaying the `update_plan` calls in order. The tools used by a command-line session are checked before the reader (0.4.0); a session without a known tool shows "no task list" | Only `update_plan` was seen |
-| 9 | **A team** | Claude Code has no idea of a team: a team is **a file of our own, outside `~/.claude`**. The assignment to a project uses the path of the project (`cwd`). To be confirmed by the threat analysis of writing (0.12.0) | No team found in `~/.claude` |
+| 9 | **A team** | Claude Code has no idea of a team: a team is **a file of our own, outside `~/.claude`**. The assignment to a project uses the path of the project (`cwd`). To be confirmed by the threat analysis of writing (0.13.0) | No team found in `~/.claude` |
 | 10 | **Context of a session** | Shown as a percentage: the tokens of the last request (`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens` of `message.usage`) divided by the context size of the model (200 000 by default, 1 000 000 with an extended context) | Observed in the transcripts; sizes from the Claude Code documentation ("Customize your status line") |
 
 ## Not in this version
@@ -31,11 +31,11 @@ Max plan. They are **not in the files** of `~/.claude`: Claude Code gives them t
 (`rate_limits.five_hour` and `rate_limits.seven_day`, `used_percentage` and `resets_at`, Pro and Max plans only), and the
 Claude Desktop application shows them. Where to read them from is not verified (does a Desktop session run a status line?
 writing a status line in `settings.json` would also widen what the application writes). This feature gets its own place in
-the roadmap, starting with a spike.
+the roadmap: version 0.12.0, starting with a spike.
 
 ## What the reader must never do
 
 - Read `.credentials.json`, the `sessions/*.key` files, `backups/`, `telemetry/`, `uploads/` or `~/.claude.json`.
 - Show or keep the text of a transcript other than what a screen needs (task card, tool name), always as plain text, cut
   to a maximum length.
-- Write anything in `~/.claude` (writing agents comes with 0.12.0, after its own threat analysis).
+- Write anything in `~/.claude` (writing agents comes with 0.13.0, after its own threat analysis).
