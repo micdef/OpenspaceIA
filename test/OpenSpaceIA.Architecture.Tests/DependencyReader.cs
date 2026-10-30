@@ -46,6 +46,13 @@ internal static class DependencyReader
     #region Variables
 
     /// <summary>
+    /// Namespace of the types that the code coverage injects into the assemblies when it instruments them statically (as it
+    /// does on Linux): they are not dependencies of the code, and a project cannot depend on them without a package, which the
+    /// rules on the project files refuse
+    /// </summary>
+    private const string CoverageInstrumentationNamespace = "Microsoft.CodeCoverage.Instrumentation";
+
+    /// <summary>
     /// Elements of a project file that make it depend on something
     /// </summary>
     private static readonly string[] _referenceElements = new string[] { "ProjectReference", "PackageReference", "Reference", "FrameworkReference", "COMReference" };
@@ -105,6 +112,20 @@ internal static class DependencyReader
     #region Privates
 
     /// <summary>
+    /// Method used to know whether a namespace holds the types that the code coverage injects
+    /// </summary>
+    /// <param name="namespaceName">[Cannot be null] Namespace of a type</param>
+    /// <returns>
+    /// True  ==> The type was injected by the code coverage, not written in the code<br/>
+    /// False ==> In any other case
+    /// </returns>
+    private static bool IsInjectedByTheCoverage(string namespaceName)
+    {
+        // Function's return
+        return namespaceName == CoverageInstrumentationNamespace || namespaceName.StartsWith(CoverageInstrumentationNamespace + ".", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Method used to find the root of the repository from the folder of the tests
     /// </summary>
     /// <returns>The full path of the folder that holds the solution file</returns>
@@ -131,18 +152,21 @@ internal static class DependencyReader
     /// Method used to list the types used by the code of an assembly
     /// </summary>
     /// <param name="assembly">[Cannot be null] Compiled assembly of a project of the solution</param>
-    /// <returns>The full names of the types used by any type of the assembly, each with the namespace it lives in</returns>
+    /// <returns>The full names of the types used by any type of the assembly, each with the namespace it lives in; the types
+    /// injected by the code coverage are left out</returns>
     public static List<(string TypeName, string NamespaceName)> GetTypesUsed(Assembly assembly)
     {
         // Loading the assembly with its dependencies
         ArchitectureModel architecture = new ArchLoader().LoadAssembliesIncludingDependencies(assembly).Build();
         string assemblyName = assembly.FullName!;
 
-        // Function's return: every type used by any type of the assembly, whatever its namespace
+        // Function's return: every type used by any type of the assembly, whatever its namespace, without the types that the
+        // code coverage injected
         return architecture.Types
-            .Where(type => type.Assembly.FullName == assemblyName)
+            .Where(type => type.Assembly.FullName == assemblyName && !IsInjectedByTheCoverage(type.Namespace.FullName))
             .SelectMany(type => type.Dependencies)
             .Select(dependency => (TypeName: dependency.Target.FullName, NamespaceName: dependency.Target.Namespace.FullName))
+            .Where(used => !IsInjectedByTheCoverage(used.NamespaceName))
             .Distinct()
             .ToList();
     }

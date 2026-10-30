@@ -611,6 +611,21 @@ public sealed class ClaudeFileReaderTests : IDisposable
     }
 
     /// <summary>
+    /// A path longer than any system accepts gives a failure, never a success nor an exception, on every system
+    /// </summary>
+    [Fact]
+    public void PathLongerThanTheSystemAcceptsIsAFailure()
+    {
+        // Reading a path of 40 000 characters
+        string longPath = Path.Combine(_root, "projects", new string('a', 40000), "x.jsonl");
+        FileReadResult result = Should.NotThrow(() => new ClaudeFileReader(_folder).ReadText(longPath));
+
+        // Checking the failure
+        result.IsSuccess.ShouldBeFalse();
+        result.Content.ShouldBeNull();
+    }
+
+    /// <summary>
     /// A file reached through a junction inside the folder is refused: the junction could lead to a forbidden folder
     /// </summary>
     [Fact]

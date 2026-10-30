@@ -334,9 +334,15 @@ public sealed class ClaudeFolderTests
         string root = NewRoot();
         ClaudeFolder folder = new ClaudeFolder(root);
 
-        // Checking a path with a null character and a path longer than any system accepts
+        // Checking a path with a null character, refused everywhere
         folder.IsReadable(Path.Combine(root, "sessions", "1\0.json")).ShouldBeFalse();
-        folder.IsReadable(Path.Combine(root, "projects", new string('a', 40000), "x.jsonl")).ShouldBeFalse();
+
+        // Checking a path longer than Windows accepts: never an exception, and a refusal on Windows (Linux resolves it, and
+        // the reading of such a file fails)
+        string longPath = Path.Combine(root, "projects", new string('a', 40000), "x.jsonl");
+        bool isReadable = Should.NotThrow(() => folder.IsReadable(longPath));
+        if (OperatingSystem.IsWindows())
+            isReadable.ShouldBeFalse();
     }
 
     /// <summary>
