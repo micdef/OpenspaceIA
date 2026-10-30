@@ -4,7 +4,7 @@ One folder per test project. The settings and packages shared by every test proj
 
 | Project | Tests |
 |---------|-------|
-| `OpenSpaceIA.Core.Tests` | The model of the core: every value is checked when it is built |
+| `OpenSpaceIA.Core.Tests` | The core: every value of the model is checked when it is built (`Model/`); the state rules, with their thresholds (`States/`) |
 
 ## Running the tests
 

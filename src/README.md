@@ -4,7 +4,7 @@ One folder per project. Each project is created by the version of the roadmap th
 
 | Project | Module | Contents |
 |---------|--------|----------|
-| `OpenSpaceIA.Core` | Core | The immutable model (`Model/`) and the read port (`Ports/Read/`); no dependency |
+| `OpenSpaceIA.Core` | Core | The immutable model (`Model/`), the state rules (`States/`) and the read port (`Ports/Read/`); no dependency |
 
 ## Planned modules
 
