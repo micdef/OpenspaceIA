@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-30
+
+Spike on the files of Claude Code: the risky unknowns are proven on real files, before any product code; no code yet.
+
+### Added
+
+- Spike (`doc/analyse/spike-claude-files.md`): the structure of `~/.claude` that the reader will use (live sessions, transcripts, sub-agent runs, agent definitions, task lists), the files it must never read, the retention of the transcripts (30 days by default), and the sizes that make incremental reading necessary.
+- Spike (`doc/analyse/spike-waiting-signal.md`): Claude Code sets the `status` of its session file to `waiting` while a question or a permission prompt waits for the user, and the tool call left open in the transcript tells which; both verified by live measurements. The transcript also records who decided each permission.
+- Decisions of the spike (`doc/analyse/claude-model-decisions.md`): how the core and the reader turn the files of Claude Code into the states of the office (working, waiting for you with the reason, idle, closed session, sub-agent runs, overloaded), the history computed from the transcripts, the real model, the task list, the team file of our own, and the context of each session.
+
+### Changed
+
+- Roadmap: network tests use a range of ports reserved for the tests (defined in 1.1.0), so that test runs can work in parallel, instead of port 0; a new principle says that the IP address and the port of every application can always be changed in its configuration.
+- Roadmap: a new version 0.12.0 shows the usage limits of the plan (5-hour window and weekly limit, as a percentage, with their reset times) and the context of each session, after a spike on where to read the limits; the write versions move to 0.13.0 and 0.14.0, packaging to 0.15.0.
+
 ## [0.1.0] - 2026-10-30
 
 Repository bootstrap and project framing: purpose, architecture, stack, design and roadmap are defined; no code yet.
@@ -31,5 +46,6 @@ Repository bootstrap and project framing: purpose, architecture, stack, design a
 
 - CI: the changelog check now applies only to pull requests into a release branch, so that the pull requests that move a version up into `dev` and `main`, which carry the finalized changelog, are no longer refused.
 
-[Unreleased]: https://github.com/micdef/OpenspaceIA/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/micdef/OpenspaceIA/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/micdef/OpenspaceIA/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/micdef/OpenspaceIA/releases/tag/v0.1.0
