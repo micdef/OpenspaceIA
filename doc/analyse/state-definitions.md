@@ -57,10 +57,28 @@ least 90 % of the time over the last 7 days**.
 
 - A **period of work** of the chief is the time while its `status` is `busy`; of another agent, the time between the first
   and the last record of each run.
+- A **period of waiting** exists only for the chief: the time while it waits for you.
+- The rules receive the periods of an agent, already cut, with their project; they do not know where the periods come from.
+  The reader (0.4.0) builds them from the transcripts, with no storage of our own (decision 6 of
+  [claude-model-decisions.md](claude-model-decisions.md)). Validated by Michaël Defraene on 2026-10-30.
+- Periods that overlap (runs of the same agent type in parallel) are merged: a time is never counted twice.
 - "Now" is a **parameter** of every rule: the core never reads the clock itself, so that every rule is tested with a fixed time.
 - All times are compared in UTC; only the screens show local time.
 
-## 6. Settings
+## 6. How the thresholds are read
+
+Validated by Michaël Defraene on 2026-10-30.
+
+| Rule | Reading |
+|------|---------|
+| Overloaded: projects | "at least 2": 2 projects is enough |
+| Overloaded: break | "less than 10 minutes": a break of exactly 10 minutes ends "never stops" |
+| Overloaded: what is a break | Any time of the window without a period of work: between two periods, **and also** from the start of the window to the first period, and from the last period to now. A period of waiting is a break |
+| Under-used | "at least 90 % idle": exactly 90 % is under-used. Idle is the time of the window without a period of work **or** of waiting |
+| Both | Only the part of a period inside the window counts; a period that started before the window is cut at its start |
+| Both | A period counts only when its part inside the window lasts more than zero: a period that only touches the window (it ends exactly at its start, or starts exactly now) or that lasts zero is ignored, so it adds no project |
+
+## 7. Settings
 
 | Setting | Default | Used by |
 |---------|---------|---------|
