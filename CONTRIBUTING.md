@@ -109,6 +109,11 @@ GitHub rulesets enforce these rules; nobody can bypass them, including the repos
 | Force push forbidden                   | ✅            | ✅          |
 | Deletion forbidden                     | ✅            | ❌ (deleted automatically once merged into `dev`) |
 
+The two rulesets are kept in [.github/rulesets](.github/rulesets), as exported from GitHub. The repository owner creates one
+again with `gh api -X POST repos/<owner>/<repository>/rulesets --input .github/rulesets/<file>.json`, and exports it again
+after any change made on GitHub. The `Build and test` check is the name of the job of [ci.yml](.github/workflows/ci.yml):
+renaming the job means changing the rulesets too.
+
 ### History
 
 History is never rewritten on a shared branch (`main`, `dev`, `release/*`): no force push, no amend, no rebase of pushed commits.
