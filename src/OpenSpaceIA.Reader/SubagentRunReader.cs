@@ -35,7 +35,8 @@ namespace OpenSpaceIA.Reader;
 /// description says so, or when its last tool call is its hand back (<c>SubagentHandback</c>). The model is the real model
 /// of the transcript, or the model asked when the transcript gives none. The lines that cannot be read are reported once
 /// per file, with their number. A run whose two files have the same size and last write as at the previous reading is taken
-/// from the memory of this instance; a reading that failed is not kept, so that it is tried again. Nothing is ever written.
+/// from the memory of this instance (a rewrite that keeps both is not seen: see the known limit of <see cref="CachedRun"/>);
+/// a reading that failed is not kept, so that it is tried again. Nothing is ever written.
 /// One instance is not meant to be used by two threads at the same time.</para>
 /// </remarks>
 internal sealed class SubagentRunReader

@@ -617,8 +617,13 @@ public sealed class SubagentRunReaderTests : IDisposable
     }
 
     /// <summary>
-    /// A run whose description alone has changed is read again
+    /// A run whose description alone has changed, with the same size and a new last write, is read again
     /// </summary>
+    /// <remarks>
+    /// The new last write is set by the test: two writes in a row can get the same last write, and the change is then not
+    /// seen (see <see cref="RewriteWithTheSameSizeAndTheSameLastWriteIsNotSeen"/>); this made the test fail on the CI on
+    /// 2026-10-31, when it relied on the clock.
+    /// </remarks>
     [Fact]
     public void RunWhoseDescriptionAloneChangedIsReadAgain()
     {
@@ -627,12 +632,43 @@ public sealed class SubagentRunReaderTests : IDisposable
         SubagentRunReader reader = new SubagentRunReader(_fileReader);
         reader.Read(_sinceUtc, _nowUtc).Runs.Single().AgentTypeName.ShouldBe("Explore");
 
-        // Changing the description only, to a description of the same size
+        // Changing the description only, to a description of the same size, one second later than the first one
+        string meta = Path.Combine(_root, "projects", ProjectFolder, SessionId, "subagents", "agent-a1.meta.json");
+        DateTime firstWriteUtc = File.GetLastWriteTimeUtc(meta);
         WriteText(Path.Combine("projects", ProjectFolder, SessionId, "subagents", "agent-a1.meta.json"), "{\"agentType\":\"Planner\"}");
+        File.SetLastWriteTimeUtc(meta, firstWriteUtc.AddSeconds(1));
         AgentRun changed = reader.Read(_sinceUtc, _nowUtc).Runs.Single();
 
         // Checking that the change was read
         changed.AgentTypeName.ShouldBe("Planner");
+    }
+
+    /// <summary>
+    /// Known limit of the cache: a description rewritten with the same size and the same last write is not seen, and the run
+    /// keeps what was read before
+    /// </summary>
+    /// <remarks>
+    /// The cache knows a file by its size and its last write only (<see cref="CachedRun"/>). This test pins the limit so that it
+    /// stays a known choice: if the cache one day compares the content, this test must change with it.
+    /// </remarks>
+    [Fact]
+    public void RewriteWithTheSameSizeAndTheSameLastWriteIsNotSeen()
+    {
+        // Writing a run and reading it once
+        WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
+        SubagentRunReader reader = new SubagentRunReader(_fileReader);
+        reader.Read(_sinceUtc, _nowUtc).Runs.Single().AgentTypeName.ShouldBe("Explore");
+
+        // Rewriting the description with the same size, then giving it back its first last write, as two writes in the same
+        // tick of the clock would do
+        string meta = Path.Combine(_root, "projects", ProjectFolder, SessionId, "subagents", "agent-a1.meta.json");
+        DateTime firstWriteUtc = File.GetLastWriteTimeUtc(meta);
+        WriteText(Path.Combine("projects", ProjectFolder, SessionId, "subagents", "agent-a1.meta.json"), "{\"agentType\":\"Planner\"}");
+        File.SetLastWriteTimeUtc(meta, firstWriteUtc);
+        AgentRun cached = reader.Read(_sinceUtc, _nowUtc).Runs.Single();
+
+        // Checking that the run comes from the cache, with the agent type read before
+        cached.AgentTypeName.ShouldBe("Explore");
     }
 
     /// <summary>
