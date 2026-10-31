@@ -157,6 +157,19 @@ public sealed class OpenToolCallsTests
     }
 
     /// <summary>
+    /// An open approval of a plan is a question too (decision of Michaël, 2026-10-31), even with another call open
+    /// </summary>
+    [Fact]
+    public void OpenApprovalOfAPlanIsAQuestion()
+    {
+        // Following an agent and an approval of a plan, both open
+        OpenToolCalls calls = Follow(Calls(("toolu_1", "Agent")), Calls(("toolu_2", "ExitPlanMode")));
+
+        // Checking the reason
+        calls.GetWaitReason().ShouldBe(WaitReason.Question);
+    }
+
+    /// <summary>
     /// Another open tool call gives a permission
     /// </summary>
     [Fact]

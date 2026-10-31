@@ -26,9 +26,10 @@ namespace OpenSpaceIA.Reader;
 /// (doc/analyse/spike-waiting-signal.md; doc/analyse/claude-model-decisions.md, decision 2).</para>
 /// <para><b>Behavior:</b> a call is open from its item <c>tool_use</c> in a record of the assistant until an item
 /// <c>tool_result</c> with its identifier in a record of the user. The state is kept between the lines, so that a
-/// transcript that grows is followed from where it was. The reason of a wait is a question when an open call is
-/// <c>AskUserQuestion</c>, a permission when another call is open, and a question when none is open (the status of a
-/// question can come before its record; decision of Michaël, 2026-10-31). A line that is not a JSON object, or whose
+/// transcript that grows is followed from where it was. The reason of a wait is a question when an open call asks the user
+/// something (<c>AskUserQuestion</c>, or <c>ExitPlanMode</c> for the approval of a plan), a permission when another call is
+/// open, and a question when none is open (the status of a question can come before its record; decisions of Michaël,
+/// 2026-10-31). A line that is not a JSON object, or whose
 /// identifiers cannot be read, is counted and changes nothing; a blank line is left out. A line is never kept.</para>
 /// </remarks>
 internal sealed class OpenToolCalls
@@ -37,14 +38,17 @@ internal sealed class OpenToolCalls
 
     #region Constants
 
-    /// <summary>
-    /// Name of the tool that asks the user a question
-    /// </summary>
-    private const string QuestionToolName = "AskUserQuestion";
+    // #N/A
 
     #endregion
 
     #region Variables
+
+    /// <summary>
+    /// Names of the tools that ask the user something: a question, or the approval of a plan (decision of Michaël,
+    /// 2026-10-31)
+    /// </summary>
+    private static readonly HashSet<string> _questionToolNames = new HashSet<string>(StringComparer.Ordinal) { "AskUserQuestion", "ExitPlanMode" };
 
     /// <summary>
     /// Name of each open tool call, by its identifier
@@ -204,13 +208,13 @@ internal sealed class OpenToolCalls
     /// Method used to get the reason of a wait from the open tool calls
     /// </summary>
     /// <returns>
-    /// Question   ==> An open call asks a question, or no call is open<br/>
+    /// Question   ==> An open call asks a question or the approval of a plan, or no call is open<br/>
     /// Permission ==> Calls are open, and none asks a question
     /// </returns>
     public WaitReason GetWaitReason()
     {
         // Function's return
-        return _openCalls.Count == 0 || _openCalls.ContainsValue(QuestionToolName) ? WaitReason.Question : WaitReason.Permission;
+        return _openCalls.Count == 0 || _openCalls.Values.Any(_questionToolNames.Contains) ? WaitReason.Question : WaitReason.Permission;
     }
 
     #endregion
