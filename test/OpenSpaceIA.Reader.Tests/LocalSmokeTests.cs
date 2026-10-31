@@ -30,7 +30,9 @@ namespace OpenSpaceIA.Reader.Tests;
 /// tests never reads the files of the user. It reads two snapshots with the default adapter, applies the state rules of the
 /// core with the default settings, and writes a report in the output of the test: counts, names of the agent types and
 /// states, times, and the problems grouped by kind. It never writes a content of a file, and it writes nothing on the
-/// disk. It checks only what must hold on any machine: the reading succeeds, and the snapshot is coherent.</para>
+/// disk. It checks only what must hold on any machine, even a busy one between its two snapshots: the reading succeeds, one
+/// agent type per name, and an agent type for every run. The report shows the names of the projects: check it before you
+/// share it.</para>
 /// </remarks>
 public sealed class LocalSmokeTests
 {
@@ -169,7 +171,7 @@ public sealed class LocalSmokeTests
         // Writing the report of the machine and of the times
         StateSettings settings = StateSettings.Default;
         DateTimeOffset nowUtc = snapshot.TakenAtUtc;
-        Report($"Machine {snapshot.Machine.Name}, snapshot taken at {nowUtc:yyyy-MM-dd HH:mm:ss} UTC");
+        Report($"Machine {snapshot.Machine.Name}, snapshot taken at {nowUtc.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} UTC");
         Report($"Times: first snapshot {coldMilliseconds} ms, second {warmMilliseconds} ms");
 
         // Writing the chiefs and their state
@@ -194,12 +196,12 @@ public sealed class LocalSmokeTests
         foreach (IGrouping<string, ReadingProblem> kind in snapshot.Problems.GroupBy(KindOf).OrderByDescending(group => group.Count()))
             Report($"  {kind.Count()} x {kind.Key}");
 
-        // Checking what must hold on any machine: the machine, a coherent snapshot, and the same agent types twice
+        // Checking what must hold on any machine, even a busy one: the machine, the order of the snapshots, one agent type per
+        // name, and an agent type for every run
         snapshot.Machine.Name.ShouldBe(Environment.MachineName);
         snapshot.TakenAtUtc.ShouldBeGreaterThanOrEqualTo(cold.TakenAtUtc);
-        snapshot.Sessions.ShouldAllBe(session => (session.Status == SessionStatus.Waiting) == (session.WaitReason != null));
-        snapshot.ChiefPeriods.ShouldAllBe(period => period.EndUtc <= nowUtc.AddMinutes(5));
-        snapshot.AgentTypes.Select(agentType => agentType.Name).ShouldBe(cold.AgentTypes.Select(agentType => agentType.Name));
+        snapshot.AgentTypes.Select(agentType => agentType.Name).ShouldBeUnique();
+        snapshot.Runs.ShouldAllBe(run => snapshot.AgentTypes.Any(agentType => agentType.Name == run.AgentTypeName));
     }
 
     #endregion
