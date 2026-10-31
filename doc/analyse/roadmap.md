@@ -82,10 +82,10 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 
 #### 0.4.0 — The reader of `~/.claude`
 
-- **Content**: the Reader project with invented fixtures; a tolerant reading: an unknown or unreadable line is skipped and logged, never an exception that goes up; agent definitions; sessions and sub-agents turned into observations for the rules; the waiting signal (or its fallback) from 0.2.0; files opened with full sharing so that Claude Code is never disturbed.
-- **Done**: a local test, skipped in the CI, shows the real state of your agents; a missing, broken or locked file never stops the reader; the thresholds of "overloaded" are calibrated on a real week of your activity, and their defaults changed in `state-definitions.md` if needed.
+- **Content**: the Reader project with invented fixtures; a tolerant reading: an unknown or unreadable line is skipped and reported in the result (the host writes the logs), never an exception that goes up; agent definitions; sessions and sub-agents turned into observations for the rules; the waiting signal (or its fallback) from 0.2.0; files opened with full sharing so that Claude Code is never disturbed.
+- **Done**: a local test, skipped in the CI, shows the real state of your agents; a missing, broken or locked file never stops the reader; the thresholds of "overloaded" and "under-used" are calibrated on a real week of your activity, and their defaults changed in `state-definitions.md` if needed (2026-10-31: "overloaded" kept; "under-used" measured against the active time of the chief, at 95 % idle).
 - **Tests**: written first (Kenobi), reviewed by Boba Fett; truncated files, encodings, a very large file (stream reading); the reader creates and writes nothing (test on a read-only folder); it only returns what the core needs.
-- **Branches**, in order: `feature/reader-project`, then `feature/reader-agents` and `feature/reader-activity` (in parallel), then `feature/reader-waiting-signal`, then `test/reader-local-smoke`.
+- **Branches**, in order: `feature/reader-project`, then `feature/reader-agents` and `feature/reader-activity` (in parallel; the activity is split into `feature/reader-sessions` and `feature/reader-runs`), then `feature/reader-waiting-signal`, then `feature/reader-chief-periods` (the periods of the chief, moved from `feature/reader-runs`), then `feature/reader-snapshot` (the adapter of the read port), then `test/reader-local-smoke`, then `feature/calibrate-states`. **Exception** (2026-10-31, decided by Michaël Defraene, not a rule): a test of the cache of the runs failed on the CI after `release/0.4.0` was merged into `dev`, so `fix/run-cache-test` was made from `dev` and merged into `dev` (see `CHANGELOG.md`, 0.4.0, Fixed).
 
 ### Block 2 — The desktop application, read
 
@@ -266,7 +266,7 @@ If time runs short, 0.9.0 (Projects) and 0.10.0 (History) can be merged into one
 
 | Choice | When |
 |--------|------|
-| Threshold and time window of "overloaded" | Defaults fixed in 0.3.0 (`state-definitions.md`); calibrated on a real week in 0.4.0, with the reader |
+| Threshold and time window of "overloaded" | Defaults fixed in 0.3.0 (`state-definitions.md`); calibrated on a real week in 0.4.0, with the reader: kept, and "under-used" measured against the active time of the chief (2026-10-31) |
 | History computed from the files, or stored | 0.10.0, after the spike |
 | Where a team lives | 0.14.0, after the spike (default: a file of our own, outside `~/.claude`) |
 | Language of the interface (English only, texts in a resource file) | 0.5.0 |

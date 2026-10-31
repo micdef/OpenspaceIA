@@ -68,9 +68,9 @@ public sealed record StateSettings
 
     /// <summary>
     /// The default settings: a window of 2 hours, 2 projects and a break of 10 minutes for "overloaded"; a window of 7 days
-    /// and 90 % of idle time for "under-used"
+    /// and 95 % of idle time during the active time of the chief for "under-used" (calibrated on a real week, 2026-10-31)
     /// </summary>
-    public static StateSettings Default { get; } = new StateSettings(TimeSpan.FromHours(2), 2, TimeSpan.FromMinutes(10), TimeSpan.FromDays(7), 0.9);
+    public static StateSettings Default { get; } = new StateSettings(TimeSpan.FromHours(2), 2, TimeSpan.FromMinutes(10), TimeSpan.FromDays(7), 0.95);
 
     /// <summary>
     /// Window looked at by "overloaded", ending now
@@ -93,7 +93,8 @@ public sealed record StateSettings
     public TimeSpan UnderUsedWindow { get; }
 
     /// <summary>
-    /// Minimum share of idle time in the window to be under-used, from 0 to 1 (0.9 is 90 %)
+    /// Minimum share of idle time during the active time of the chief in the window to be under-used, from 0 to 1 (0.95 is
+    /// 95 %)
     /// </summary>
     public double UnderUsedIdleShare { get; }
 
@@ -116,7 +117,8 @@ public sealed record StateSettings
     /// <param name="overloadedMinimumProjects">Minimum number of different projects to be overloaded; at least 1</param>
     /// <param name="overloadedMaximumBreak">Break that ends "never stops"; greater than zero</param>
     /// <param name="underUsedWindow">Window looked at by "under-used"; greater than zero</param>
-    /// <param name="underUsedIdleShare">Minimum share of idle time to be under-used; from 0 to 1</param>
+    /// <param name="underUsedIdleShare">Minimum share of idle time during the active time of the chief to be under-used; from 0
+    /// to 1</param>
     /// <exception cref="ArgumentOutOfRangeException">If a window or the break is not greater than zero, if the minimum number of
     /// projects is less than 1, or if the share is not a number from 0 to 1</exception>
     public StateSettings(TimeSpan overloadedWindow, int overloadedMinimumProjects, TimeSpan overloadedMaximumBreak, TimeSpan underUsedWindow,

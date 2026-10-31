@@ -126,7 +126,7 @@ public sealed class StateSettingsTests
         settings.OverloadedMinimumProjects.ShouldBe(2);
         settings.OverloadedMaximumBreak.ShouldBe(TimeSpan.FromMinutes(10));
         settings.UnderUsedWindow.ShouldBe(TimeSpan.FromDays(7));
-        settings.UnderUsedIdleShare.ShouldBe(0.9);
+        settings.UnderUsedIdleShare.ShouldBe(0.95);
     }
 
     /// <summary>
@@ -136,7 +136,7 @@ public sealed class StateSettingsTests
     public void DefaultSettingsAreStable()
     {
         // Building the default values by hand
-        StateSettings expected = Create(TimeSpan.FromHours(2), 2, TimeSpan.FromMinutes(10), TimeSpan.FromDays(7), 0.9);
+        StateSettings expected = Create(TimeSpan.FromHours(2), 2, TimeSpan.FromMinutes(10), TimeSpan.FromDays(7), 0.95);
 
         // Checking the value equality
         StateSettings.Default.ShouldBe(StateSettings.Default);

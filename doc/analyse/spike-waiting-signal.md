@@ -98,6 +98,21 @@ What it shows:
   the order was not the same in the two measurements (the status first, then the record, or both together). The
   application must therefore join the two without relying on their order.
 
+### Measured again in 0.4.0 (2026-10-31)
+
+On every chief transcript of a week (files below 60 MB), the time between a tool call and its result, by the source of
+the decision:
+
+| `source` | Results | Time between the call and its result |
+|----------|---------|--------------------------------------|
+| `user_temporary` (decided by the user) | 26 | 6 s to 17 minutes: real waits |
+| `user_permanent` (a rule saved by the user) | 1 476 | median 0.1 s: automatic, no wait |
+| `config` | 4 854 | median 1.2 s, up to 3 minutes (long tools, no wait) |
+
+Other kinds of refusal were seen: `interrupted`, `cancelled` and `automode-blocked`. Decision of Michaël: a period of
+waiting of the chief is the time from a tool call to its result when the user decided (`user_temporary`, or a refusal
+`user-rejected`); the few seconds before the prompt is shown are counted with it.
+
 ## 4. Consequences for OpenSpaceIA
 
 - **The waiting signal is the `status` field**, read in the session file. It is cheap (one small file per session). The

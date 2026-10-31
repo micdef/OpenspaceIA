@@ -311,46 +311,72 @@ public static class AgentStateRules
     }
 
     /// <summary>
-    /// Method used to know whether an agent is under-used
+    /// Method used to know whether an agent type is under-used
     /// </summary>
     /// <remarks>
-    /// <para><b>Purpose:</b> shows the agent that is almost always in the lounge (doc/analyse/state-definitions.md, § 4 and
-    /// § 6).</para>
-    /// <para><b>Behavior:</b> the periods of work and of waiting are cut to the window that ends now and merged, so that a time
-    /// is never counted twice; waiting for the user is not idle. The agent is under-used when the idle time is at least the
-    /// share of the window given by the settings. The durations are compared in ticks, in decimal, so that a share written
-    /// with few decimals (0.9, 0.75) is compared exactly; the share is a double, so a share like 1/3 is rounded to 15
-    /// significant digits first. An agent without any period is under-used.</para>
+    /// <para><b>Purpose:</b> shows the agent that is almost always in the lounge while the chief works
+    /// (doc/analyse/state-definitions.md, § 4 and § 6). Calibrated on a real week (decision of Michaël, 2026-10-31): the idle
+    /// time is measured during the active time of the chief, not over the whole window, so that the rule measures the use of
+    /// the agent and not the hours of the user. The rule does not apply to the chief itself.</para>
+    /// <para><b>Behavior:</b> the reference is the active time of the chief (its periods of work and of waiting), cut to the
+    /// window that ends now and merged. The busy time of the agent is the part of its periods (work or waiting, merged) inside
+    /// that reference: a time is never counted twice, and the time of the agent outside the active time of the chief does not
+    /// count. The agent is under-used when its idle time is at least the share of the reference given by the settings.
+    /// Without any active time of the chief in the window, there is nothing to compare with: the agent is not under-used. The
+    /// durations are compared in ticks, in decimal, so that a share written with few decimals (0.95, 0.75) is compared exactly;
+    /// the share is a double, so a share like 1/3 is rounded to 15 significant digits first.</para>
     /// </remarks>
-    /// <param name="periods">[Cannot be null] Periods of the agent, in any order</param>
+    /// <param name="periods">[Cannot be null] Periods of the agent type, in any order</param>
+    /// <param name="chiefPeriods">[Cannot be null] Periods of the chief, in any order: the reference</param>
     /// <param name="nowUtc">Now, in UTC</param>
     /// <param name="settings">[Cannot be null] Settings of the rule</param>
     /// <returns>
-    /// True  ==> The agent is under-used<br/>
-    /// False ==> The agent is not under-used
+    /// True  ==> The agent type is under-used<br/>
+    /// False ==> The agent type is not under-used, or the chief was never active in the window
     /// </returns>
-    /// <exception cref="ArgumentNullException">If the list of periods or the settings is null</exception>
-    /// <exception cref="ArgumentException">If the list of periods contains a null element, or if now is not in UTC</exception>
-    public static bool IsUnderUsed(IReadOnlyList<ActivityPeriod> periods, DateTimeOffset nowUtc, StateSettings settings)
+    /// <exception cref="ArgumentNullException">If a list of periods or the settings is null</exception>
+    /// <exception cref="ArgumentException">If a list of periods contains a null element, or if now is not in UTC</exception>
+    public static bool IsUnderUsed(IReadOnlyList<ActivityPeriod> periods, IReadOnlyList<ActivityPeriod> chiefPeriods, DateTimeOffset nowUtc, StateSettings settings)
     {
         // Checks
         IReadOnlyList<ActivityPeriod> checkedPeriods = ModelGuard.CopyWithoutNull(periods, nameof(periods));
+        IReadOnlyList<ActivityPeriod> checkedChiefPeriods = ModelGuard.CopyWithoutNull(chiefPeriods, nameof(chiefPeriods));
         ModelGuard.RequireUtc(nowUtc, nameof(nowUtc));
         ModelGuard.RequireNotNull(settings, nameof(settings));
 
-        // Adding the time of work and of waiting in the window, without counting a time twice
+        // Building the reference: the active time of the chief in the window, merged
         DateTimeOffset windowStartUtc = GetWindowStartUtc(nowUtc, settings.UnderUsedWindow);
-        long busyTicks = Merge(checkedPeriods
-                .Where(period => HasPartInWindow(period, windowStartUtc, nowUtc))
-                .Select(period => CutToWindow(period, windowStartUtc, nowUtc)))
-            .Sum(range => range.Duration.Ticks);
+        List<TimeRange> reference = Merge(checkedChiefPeriods
+            .Where(period => HasPartInWindow(period, windowStartUtc, nowUtc))
+            .Select(period => CutToWindow(period, windowStartUtc, nowUtc)));
+        long referenceTicks = reference.Sum(range => range.Duration.Ticks);
+        if (referenceTicks == 0)
+        {
+            // Function's return
+            return false;
+        }
+
+        // Adding the time of the agent inside the reference, without counting a time twice
+        List<TimeRange> busy = Merge(checkedPeriods
+            .Where(period => HasPartInWindow(period, windowStartUtc, nowUtc))
+            .Select(period => CutToWindow(period, windowStartUtc, nowUtc)));
+        long busyTicks = 0;
+        foreach (TimeRange busyRange in busy)
+        {
+            foreach (TimeRange referenceRange in reference)
+            {
+                DateTimeOffset startUtc = busyRange.StartUtc > referenceRange.StartUtc ? busyRange.StartUtc : referenceRange.StartUtc;
+                DateTimeOffset endUtc = busyRange.EndUtc < referenceRange.EndUtc ? busyRange.EndUtc : referenceRange.EndUtc;
+                if (endUtc > startUtc)
+                    busyTicks += (endUtc - startUtc).Ticks;
+            }
+        }
 
         // Comparing the idle time with the share asked
-        long windowTicks = (nowUtc - windowStartUtc).Ticks;
-        decimal idleTicks = windowTicks - busyTicks;
+        decimal idleTicks = referenceTicks - busyTicks;
 
         // Function's return
-        return idleTicks >= (decimal)settings.UnderUsedIdleShare * windowTicks;
+        return idleTicks >= (decimal)settings.UnderUsedIdleShare * referenceTicks;
     }
 
     #endregion
