@@ -366,6 +366,24 @@ public sealed class SubagentRunReaderTests : IDisposable
     }
 
     /// <summary>
+    /// A transcript without description that copies a run read in another session (a resumed session) is not reported
+    /// </summary>
+    [Fact]
+    public void CopyOfARunReadElsewhereIsNotReported()
+    {
+        // Writing a run with its description, and its copy without description in another session
+        WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
+        WriteText(Path.Combine("projects", ProjectFolder, "other-session", "subagents", "agent-a1.jsonl"), Record("2026-10-31T12:00:00Z") + "\n");
+
+        // Reading the runs
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
+
+        // Checking that the run is read once, and that the copy is not reported
+        runs.Runs.Select(run => run.Id).ShouldBe(new List<string>() { "a1" });
+        runs.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
     /// A run whose transcript gives no time or no working folder is left out and reported
     /// </summary>
     /// <param name="line">Only line of the transcript</param>

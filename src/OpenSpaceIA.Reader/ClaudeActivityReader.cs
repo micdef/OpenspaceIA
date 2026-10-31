@@ -31,8 +31,10 @@ namespace OpenSpaceIA.Reader;
 /// second of a session) is left out without a problem: it appears in the next snapshot (decision of Michaël, 2026-10-31). A
 /// waiting session gets the reason read in its transcript. The model and the task list of a session are not read yet.
 /// The agent types are the definitions of the user, then the types seen only in the runs. Every problem of every part is
-/// given with the snapshot, without any content of a file. The reading runs outside the thread of the caller, one at a time:
-/// the readers keep what they read between two snapshots, in memory only. Nothing is ever written.</para>
+/// given with the snapshot, without any content of a file (its source is the full path of a file, which holds the name of
+/// the user: to be shortened before a snapshot leaves the machine). The reading runs outside the thread of the caller, one
+/// at a time: the readers keep what they read between two snapshots, in memory only; a reading that waits for another one
+/// cannot be cancelled while it waits, and stops at the next part when it is. Nothing is ever written.</para>
 /// </remarks>
 public sealed class ClaudeActivityReader : IActivityReader
 {
@@ -135,6 +137,7 @@ public sealed class ClaudeActivityReader : IActivityReader
     /// Constructor reading the folder of Claude Code of the current user, on this machine, with the clock of the system and
     /// the default settings
     /// </summary>
+    /// <exception cref="ArgumentException">If the system gives no full path for the profile of the user</exception>
     public ClaudeActivityReader()
         : this(ClaudeFolder.FromUserProfile(), new SystemProcessProbe(), TimeProvider.System, StateSettings.Default, new Machine(Environment.MachineName))
     {
@@ -222,27 +225,41 @@ public sealed class ClaudeActivityReader : IActivityReader
             AgentDefinitions definitions = _agentDefinitions.Read();
             cancellationToken.ThrowIfCancellationRequested();
             LiveSessions live = _sessions.Read();
+            cancellationToken.ThrowIfCancellationRequested();
             WaitReasons waits = _waitReasons.Read(live.Sessions);
             cancellationToken.ThrowIfCancellationRequested();
             SubagentRuns runs = _runs.Read(sinceUtc, nowUtc);
             cancellationToken.ThrowIfCancellationRequested();
             ChiefPeriods chief = _chiefPeriods.Read(sinceUtc, nowUtc);
 
-            // Building the sessions whose status is known, a waiting one with its reason
+            // Gathering the problems of every part
+            List<ReadingProblem> problems = ToCore(definitions.Problems).Concat(ToCore(live.Problems)).Concat(ToCore(waits.Problems))
+                .Concat(ToCore(runs.Problems)).Concat(ToCore(chief.Problems)).ToList();
+
+            // Building the sessions whose status is known, a waiting one with its reason (a question, reported, if the reader
+            // of the reasons ever gave none)
             List<Session> sessions = new List<Session>();
             foreach (SessionFile facts in live.Sessions.Select(session => session.Facts).Where(facts => facts.Status is not null))
             {
                 SessionStatus status = facts.Status!.Value;
-                WaitReason? reason = status == SessionStatus.Waiting
-                    ? waits.Reasons.TryGetValue(facts.SessionId, out WaitReason read) ? read : WaitReason.Question
-                    : null;
+                WaitReason? reason = null;
+                if (status == SessionStatus.Waiting)
+                {
+                    if (waits.Reasons.TryGetValue(facts.SessionId, out WaitReason read))
+                    {
+                        reason = read;
+                    }
+                    else
+                    {
+                        reason = WaitReason.Question;
+                        problems.Add(new ReadingProblem(facts.SessionId, "The waiting session got no reason: its wait is taken as a question"));
+                    }
+                }
                 sessions.Add(new Session(facts.SessionId, facts.Project, status, reason, facts.StartedAtUtc, null, null));
             }
 
-            // Gathering the agent types and the problems
+            // Gathering the agent types: the definitions, then the types seen only in the runs
             IReadOnlyList<AgentType> agentTypes = RunActivity.AddAgentTypesOfRuns(definitions.AgentTypes, runs.Runs);
-            List<ReadingProblem> problems = ToCore(definitions.Problems).Concat(ToCore(live.Problems)).Concat(ToCore(waits.Problems))
-                .Concat(ToCore(runs.Problems)).Concat(ToCore(chief.Problems)).ToList();
 
             // Function's return
             return new ActivitySnapshot(_machine, nowUtc, sessions, agentTypes, runs.Runs, chief.Periods, problems);

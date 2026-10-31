@@ -116,7 +116,8 @@ public sealed record ActivitySnapshot
     #region Constructors
 
     /// <summary>
-    /// Constructor of a snapshot without periods of the chief and without problems
+    /// Constructor of a snapshot without periods of the chief and without problems, for a source that gives neither (an
+    /// invented snapshot, or a source that only knows the present)
     /// </summary>
     /// <param name="machine">[Cannot be null] Machine whose activity it is</param>
     /// <param name="takenAtUtc">Time the activity was read, in UTC</param>

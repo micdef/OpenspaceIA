@@ -25,7 +25,8 @@ namespace OpenSpaceIA.Core.Model;
 /// so that the host writes them in its logs and the screens can say that something is unknown (decision of Michaël,
 /// 2026-10-31).</para>
 /// <para><b>Behavior:</b> immutable; two problems with the same values are equal. The source names where the problem is (a
-/// file, a folder); the reason never holds a content of the source.</para>
+/// file, a folder, a session): a full path holds the name of the user, so it must be shortened before a snapshot leaves the
+/// machine; the reason never holds a content of the source.</para>
 /// </remarks>
 public sealed record ReadingProblem
 {

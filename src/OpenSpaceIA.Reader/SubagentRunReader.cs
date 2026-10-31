@@ -29,7 +29,8 @@ namespace OpenSpaceIA.Reader;
 /// digits, hyphens and underscores is reported and not read, and a folder that is a link is reported and not followed. A
 /// record of a transcript dated more than five minutes after now is not true, and is not read. Each transcript
 /// <c>agent-&lt;id&gt;.jsonl</c> written since the start of the window is a run: its description
-/// <c>agent-&lt;id&gt;.meta.json</c> gives its agent type (without it, the run is left out and reported), and its transcript,
+/// <c>agent-&lt;id&gt;.meta.json</c> gives its agent type (without it, the run is left out, and reported only when no other
+/// session gave the same run with its description: a resumed session copies the transcripts of the old one), and its transcript,
 /// read line by line, gives its times, its project, its real model and its last tool. A run is finished when its
 /// description says so, or when its last tool call is its hand back (<c>SubagentHandback</c>). The model is the real model
 /// of the transcript, or the model asked when the transcript gives none. The lines that cannot be read are reported once
@@ -291,7 +292,9 @@ internal sealed class SubagentRunReader
     /// <param name="runs">[Cannot be null] Runs read, where the new ones are added</param>
     /// <param name="problems">[Cannot be null] Problems, where every run left out is added</param>
     /// <param name="seen">[Cannot be null] Full paths of the transcripts seen, so that the others are removed from the cache</param>
-    private void ReadSession(string sessionFolder, DateTimeOffset sinceUtc, DateTimeOffset latestAcceptedUtc, List<AgentRun> runs, List<ReadProblem> problems, HashSet<string> seen)
+    /// <param name="withoutDescription">[Cannot be null] Identifier and problems of each transcript without description</param>
+    private void ReadSession(string sessionFolder, DateTimeOffset sinceUtc, DateTimeOffset latestAcceptedUtc, List<AgentRun> runs, List<ReadProblem> problems,
+        HashSet<string> seen, List<(string RunId, IReadOnlyList<ReadProblem> Problems)> withoutDescription)
     {
         // Refusing a subagents folder that is a link
         string subagentsFolder = Path.Join(sessionFolder, SubagentsFolderName);
@@ -341,10 +344,14 @@ internal sealed class SubagentRunReader
                     _cache.Remove(transcriptPath);
             }
 
-            // Adding the run and its problems
+            // Adding the run and its problems; the problems of a transcript without description wait for the end of the walk,
+            // since it is often a copy of a run read in another session
             if (cached.Run is not null)
                 runs.Add(cached.Run);
-            problems.AddRange(cached.Problems);
+            if (meta is null)
+                withoutDescription.Add((runId, cached.Problems));
+            else
+                problems.AddRange(cached.Problems);
         }
     }
 
@@ -370,6 +377,7 @@ internal sealed class SubagentRunReader
         List<AgentRun> runs = new List<AgentRun>();
         List<ReadProblem> problems = new List<ReadProblem>();
         HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
+        List<(string RunId, IReadOnlyList<ReadProblem> Problems)> withoutDescription = new List<(string RunId, IReadOnlyList<ReadProblem> Problems)>();
         string projectsFolder = Path.Join(_fileReader.Folder.RootPath, ProjectsFolderName);
         if (FolderListing.IsLinkedFolder(projectsFolder))
         {
@@ -390,12 +398,17 @@ internal sealed class SubagentRunReader
                         continue;
 
                     if (IsPlainName(name))
-                        ReadSession(sessionFolder, sinceUtc, latestAcceptedUtc, runs, problems, seen);
+                        ReadSession(sessionFolder, sinceUtc, latestAcceptedUtc, runs, problems, seen, withoutDescription);
                     else
                         problems.Add(new ReadProblem(sessionFolder, "The name of the folder of a session is not made of letters, digits, hyphens and underscores: it is not read"));
                 }
             }
         }
+
+        // Reporting a transcript without description only when no other session gave the same run with its description
+        HashSet<string> readRunIds = new HashSet<string>(runs.Select(run => run.Id), StringComparer.Ordinal);
+        foreach ((string runId, IReadOnlyList<ReadProblem> runProblems) in withoutDescription.Where(entry => !readRunIds.Contains(entry.RunId)))
+            problems.AddRange(runProblems);
 
         // Forgetting the runs whose transcript was not seen this time
         foreach (string path in _cache.Keys.Where(path => !seen.Contains(path)).ToList())

@@ -252,34 +252,102 @@ public sealed class ClaudeActivityReaderTests : IDisposable
     }
 
     /// <summary>
-    /// The problems of every part are given with the snapshot, as problems of the core
+    /// The problems of every part (definitions, sessions, waits, runs, periods of the chief) are given with the snapshot, as
+    /// problems of the core
     /// </summary>
     [Fact]
     public async Task ProblemsOfEveryPartAreGivenAsync()
     {
-        // Writing a broken definition and a broken session file
+        // Writing a broken definition, a broken session file, a waiting session without transcript, a run without
+        // description, and a transcript of a chief with a bad line
         WriteText(Path.Combine("agents", "broken.md"), "no front matter");
         WriteText(Path.Combine("sessions", "40.json"), "{ not json");
+        WriteSession(50, "no-transcript", "waiting");
+        WriteText(Path.Combine("projects", ProjectFolder, "s9", "subagents", "agent-a9.jsonl"), "{\"type\":\"user\",\"timestamp\":\"2026-10-31T12:00:00Z\"}\n");
+        WriteText(Path.Combine("projects", ProjectFolder, "s8.jsonl"), "{ bad\n");
 
         // Reading the snapshot
         ActivitySnapshot snapshot = await CreateReader().ReadSnapshotAsync(CancellationToken.None);
 
-        // Checking the problems
-        snapshot.Problems.Select(problem => Path.GetFileName(problem.Source)).ShouldBe(new List<string>() { "broken.md", "40.json" });
+        // Checking that each part gave its problem
+        List<string> reasons = snapshot.Problems.Select(problem => problem.Reason).ToList();
+        reasons.ShouldContain(reason => reason.Contains("front matter", StringComparison.Ordinal));
+        reasons.ShouldContain(reason => reason.Contains("not valid JSON", StringComparison.Ordinal));
+        reasons.ShouldContain(reason => reason.Contains("no transcript", StringComparison.Ordinal));
+        reasons.ShouldContain(reason => reason.Contains("no description", StringComparison.Ordinal));
+        reasons.ShouldContain(reason => reason.Contains("a period may be missing", StringComparison.Ordinal));
+        snapshot.Problems.Count.ShouldBe(5);
     }
 
     /// <summary>
-    /// A reading cancelled before it starts is not done
+    /// A waiting session for a permission gets the reason read in its transcript
+    /// </summary>
+    [Fact]
+    public async Task ReasonOfAWaitComesFromTheTranscriptAsync()
+    {
+        // Writing a waiting session whose transcript has a read left open
+        WriteSession(10, "s1", "waiting");
+        WriteText(Path.Combine("projects", ProjectFolder, "s1.jsonl"),
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-10-31T12:05:00Z\",\"message\":{\"stop_reason\":\"tool_use\",\"content\":[{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"Read\",\"input\":{}}]}}\n");
+
+        // Reading the snapshot
+        ActivitySnapshot snapshot = await CreateReader().ReadSnapshotAsync(CancellationToken.None);
+
+        // Checking the reason
+        snapshot.Sessions.Single().WaitReason.ShouldBe(WaitReason.Permission);
+    }
+
+    /// <summary>
+    /// The window of history is the longer of the two windows of the settings: a run of three days ago is read
+    /// </summary>
+    [Fact]
+    public async Task WindowOfHistoryIsTheLongerOneAsync()
+    {
+        // Writing a run of three days ago, its transcript last written then
+        string workingFolder = _workingFolder.Replace("\\", "\\\\", StringComparison.Ordinal);
+        WriteText(Path.Combine("projects", ProjectFolder, "s1", "subagents", "agent-a1.meta.json"), "{\"agentType\":\"Explore\"}");
+        WriteText(Path.Combine("projects", ProjectFolder, "s1", "subagents", "agent-a1.jsonl"),
+            $"{{\"type\":\"user\",\"timestamp\":\"2026-10-28T12:00:00Z\",\"cwd\":\"{workingFolder}\"}}\n");
+        File.SetLastWriteTimeUtc(Path.Combine(_root, "projects", ProjectFolder, "s1", "subagents", "agent-a1.jsonl"), new DateTime(2026, 10, 28, 12, 0, 0, DateTimeKind.Utc));
+
+        // Reading the snapshot with the default settings (2 hours and 7 days)
+        ActivitySnapshot snapshot = await CreateReader().ReadSnapshotAsync(CancellationToken.None);
+
+        // Checking that the run is read
+        snapshot.Runs.Count.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// A reading cancelled is not done, whether it is cancelled before it starts or between its parts
     /// </summary>
     [Fact]
     public async Task CancelledReadingIsNotDoneAsync()
     {
-        // Reading with a token already cancelled
+        // Reading with a token already cancelled, through the port and inside the reading itself
         using CancellationTokenSource cancellation = new CancellationTokenSource();
         await cancellation.CancelAsync();
+        ClaudeActivityReader reader = CreateReader();
 
-        // Checking the cancellation
-        await Should.ThrowAsync<OperationCanceledException>(() => CreateReader().ReadSnapshotAsync(cancellation.Token));
+        // Checking the cancellations, then that the reader still works
+        await Should.ThrowAsync<OperationCanceledException>(() => reader.ReadSnapshotAsync(cancellation.Token));
+        Should.Throw<OperationCanceledException>(() => reader.Read(cancellation.Token));
+        (await reader.ReadSnapshotAsync(CancellationToken.None)).Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// Two readings at the same time are done one after the other, and give the same snapshot
+    /// </summary>
+    [Fact]
+    public async Task TwoReadingsAtTheSameTimeGiveTheSameSnapshotAsync()
+    {
+        // Writing a session, then reading twice at the same time
+        WriteSession(20, "s2", "busy");
+        ClaudeActivityReader reader = CreateReader();
+        ActivitySnapshot[] snapshots = await Task.WhenAll(reader.ReadSnapshotAsync(CancellationToken.None), reader.ReadSnapshotAsync(CancellationToken.None));
+
+        // Checking both snapshots
+        snapshots[0].Sessions.ShouldBe(snapshots[1].Sessions);
+        snapshots[0].Sessions.Count.ShouldBe(1);
     }
 
     /// <summary>
