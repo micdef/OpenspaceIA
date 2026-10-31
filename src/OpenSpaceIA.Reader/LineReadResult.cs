@@ -82,6 +82,12 @@ internal sealed record LineReadResult
     public int TooLongLineCount { get; }
 
     /// <summary>
+    /// Position just after the last byte consumed, in bytes from the start of the file, where a next reading can start; 0
+    /// for a failure
+    /// </summary>
+    public long EndOffset { get; }
+
+    /// <summary>
     /// Why the reading failed; null when it succeeded
     /// </summary>
     public FileReadFailure? Failure { get; }
@@ -108,14 +114,16 @@ internal sealed record LineReadResult
     /// </summary>
     /// <param name="lineCount">Number of lines given</param>
     /// <param name="tooLongLineCount">Number of lines skipped</param>
+    /// <param name="endOffset">Position just after the last byte consumed</param>
     /// <param name="failure">[Can be null] Reason of the failure, for a failure</param>
     /// <param name="detail">[Can be null] Details of the failure, for a failure</param>
-    private LineReadResult(int lineCount, int tooLongLineCount, FileReadFailure? failure, string? detail)
+    private LineReadResult(int lineCount, int tooLongLineCount, long endOffset, FileReadFailure? failure, string? detail)
     {
         // Setting the values
         IsSuccess = failure is null;
         LineCount = lineCount;
         TooLongLineCount = tooLongLineCount;
+        EndOffset = endOffset;
         Failure = failure;
         Detail = detail;
     }
@@ -143,18 +151,21 @@ internal sealed record LineReadResult
     /// </summary>
     /// <param name="lineCount">Number of lines given, 0 or more</param>
     /// <param name="tooLongLineCount">Number of lines skipped because they were too long, 0 or more</param>
-    /// <returns>A successful result holding the counts</returns>
-    /// <exception cref="ArgumentOutOfRangeException">If a count is negative</exception>
-    public static LineReadResult Success(int lineCount, int tooLongLineCount)
+    /// <param name="endOffset">Position just after the last byte consumed, 0 or more</param>
+    /// <returns>A successful result holding the counts and the end position</returns>
+    /// <exception cref="ArgumentOutOfRangeException">If a count or the position is negative</exception>
+    public static LineReadResult Success(int lineCount, int tooLongLineCount, long endOffset)
     {
         // Checks
         if (lineCount < 0)
             throw new ArgumentOutOfRangeException(nameof(lineCount), lineCount, $"The value of the parameter: {nameof(lineCount)} cannot be negative");
         if (tooLongLineCount < 0)
             throw new ArgumentOutOfRangeException(nameof(tooLongLineCount), tooLongLineCount, $"The value of the parameter: {nameof(tooLongLineCount)} cannot be negative");
+        if (endOffset < 0)
+            throw new ArgumentOutOfRangeException(nameof(endOffset), endOffset, $"The value of the parameter: {nameof(endOffset)} cannot be negative");
 
         // Function's return
-        return new LineReadResult(lineCount, tooLongLineCount, null, null);
+        return new LineReadResult(lineCount, tooLongLineCount, endOffset, null, null);
     }
 
     /// <summary>
@@ -174,7 +185,7 @@ internal sealed record LineReadResult
             throw new ArgumentNullException(nameof(detail), $"The value of the parameter: {nameof(detail)} cannot be null or empty");
 
         // Function's return
-        return new LineReadResult(0, 0, failure, detail);
+        return new LineReadResult(0, 0, 0, failure, detail);
     }
 
     #endregion

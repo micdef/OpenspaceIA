@@ -222,6 +222,44 @@ public sealed class ClaudeFileReaderTests : IDisposable
         // Checking the limit
         ClaudeFileReader.DefaultMaximumBytes.ShouldBe(1048576L);
         reader.MaximumBytes.ShouldBe(ClaudeFileReader.DefaultMaximumBytes);
+        ClaudeFileReader.DefaultMaximumLineBytes.ShouldBe(16777216L);
+        reader.MaximumLineBytes.ShouldBe(ClaudeFileReader.DefaultMaximumLineBytes);
+    }
+
+    /// <summary>
+    /// The limit of a file and the limit of a line are kept apart; one limit given alone is used for both
+    /// </summary>
+    [Fact]
+    public void LimitsOfAFileAndOfALineAreKeptApart()
+    {
+        // Building readers with one limit, then with two
+        ClaudeFileReader one = new ClaudeFileReader(_folder, 32);
+        ClaudeFileReader two = new ClaudeFileReader(_folder, 32, 64);
+        ArgumentOutOfRangeException invalid = Should.Throw<ArgumentOutOfRangeException>(() => new ClaudeFileReader(_folder, 32, 0));
+
+        // Checking the limits and the parameter in fault
+        one.MaximumLineBytes.ShouldBe(32);
+        two.MaximumBytes.ShouldBe(32);
+        two.MaximumLineBytes.ShouldBe(64);
+        invalid.ParamName.ShouldBe("maximumLineBytes");
+    }
+
+    /// <summary>
+    /// With the default limits, a line of 2 MB (the result of reading a document) is read, although a file of that size would
+    /// be refused in one go
+    /// </summary>
+    [Fact]
+    public void LineOfTwoMegabytesIsReadByDefault()
+    {
+        // Writing a transcript with a line of 2 MB
+        string fullPath = WriteText("projects/C--p/s.jsonl", new string('x', 2000000) + "\nend\n");
+
+        // Reading the lines with the default limits
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking that the long line was read
+        result.TooLongLineCount.ShouldBe(0);
+        lines.Select(line => line.Length).ShouldBe(new List<int>() { 2000000, 3 });
     }
 
     /// <summary>
@@ -936,6 +974,161 @@ public sealed class ClaudeFileReaderTests : IDisposable
         // Checking the result
         result.IsSuccess.ShouldBeTrue();
         lines.ShouldBe(new List<string>() { "{\"a\":1}" });
+    }
+
+    /// <summary>
+    /// The reading of every line ends at the end of the file
+    /// </summary>
+    [Fact]
+    public void ReadingOfEveryLineEndsAtTheEndOfTheFile()
+    {
+        // Writing a transcript whose last line is not ended
+        string fullPath = WriteText("projects/C--p/s.jsonl", "{\"a\":1}\n{\"b\":");
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out _);
+
+        // Checking the end position
+        result.EndOffset.ShouldBe(new FileInfo(fullPath).Length);
+    }
+
+    /// <summary>
+    /// Only the complete lines are given: a last line without line feed is not consumed, and the end position is just after
+    /// the last line feed
+    /// </summary>
+    [Fact]
+    public void OnlyCompleteLinesAreGivenFromAPosition()
+    {
+        // Writing a transcript whose last line is not ended
+        string fullPath = WriteText("projects/C--p/s.jsonl", "{\"a\":1}\n{\"b\":2}\n{\"c\":");
+        List<string> lines = new List<string>();
+
+        // Reading the complete lines
+        LineReadResult result = new ClaudeFileReader(_folder).ReadCompleteLines(fullPath, 0, lines.Add);
+
+        // Checking the lines and the end position
+        result.IsSuccess.ShouldBeTrue();
+        lines.ShouldBe(new List<string>() { "{\"a\":1}", "{\"b\":2}" });
+        result.EndOffset.ShouldBe(16);
+    }
+
+    /// <summary>
+    /// A reading from the end position of the previous one gives only the new lines, the unfinished line whole
+    /// </summary>
+    [Fact]
+    public void ReadingFromThePreviousEndGivesOnlyTheNewLines()
+    {
+        // Writing a transcript, reading it, then ending its last line and adding a line
+        string fullPath = WriteText("projects/C--p/s.jsonl", "{\"a\":1}\n{\"c\":");
+        ClaudeFileReader reader = new ClaudeFileReader(_folder);
+        LineReadResult first = reader.ReadCompleteLines(fullPath, 0, _ => { });
+        File.AppendAllText(fullPath, "3}\n{\"d\":4}\n");
+        List<string> lines = new List<string>();
+        LineReadResult second = reader.ReadCompleteLines(fullPath, first.EndOffset, lines.Add);
+
+        // Checking that only the new lines were given, and the end position
+        lines.ShouldBe(new List<string>() { "{\"c\":3}", "{\"d\":4}" });
+        second.EndOffset.ShouldBe(new FileInfo(fullPath).Length);
+    }
+
+    /// <summary>
+    /// The byte order mark is removed only when the reading starts at position 0
+    /// </summary>
+    [Fact]
+    public void ByteOrderMarkIsRemovedOnlyFromPositionZero()
+    {
+        // Writing a line, then a line that starts with a byte order mark
+        byte[] mark = new UTF8Encoding(true).GetPreamble();
+        string fullPath = WriteFile("projects/C--p/s.jsonl", mark.Concat(Encoding.UTF8.GetBytes("a\n")).Concat(mark).Concat(Encoding.UTF8.GetBytes("b\n")).ToArray());
+        ClaudeFileReader reader = new ClaudeFileReader(_folder);
+        List<string> fromStart = new List<string>();
+        List<string> fromSecondLine = new List<string>();
+
+        // Reading from the start, then from the second line
+        reader.ReadCompleteLines(fullPath, 0, fromStart.Add);
+        reader.ReadCompleteLines(fullPath, 5, fromSecondLine.Add);
+
+        // Checking that only the mark of the start of the file was removed
+        fromStart.ShouldBe(new List<string>() { "a", "﻿b" });
+        fromSecondLine.ShouldBe(new List<string>() { "﻿b" });
+    }
+
+    /// <summary>
+    /// A position beyond the end of the file gives no line and keeps the position, so that the caller sees the file shrank
+    /// </summary>
+    [Fact]
+    public void PositionBeyondTheEndGivesNothing()
+    {
+        // Writing a short transcript
+        string fullPath = WriteText("projects/C--p/s.jsonl", "{\"a\":1}\n");
+        List<string> lines = new List<string>();
+
+        // Reading from far beyond its end
+        LineReadResult result = new ClaudeFileReader(_folder).ReadCompleteLines(fullPath, 1000, lines.Add);
+
+        // Checking the result
+        result.IsSuccess.ShouldBeTrue();
+        lines.ShouldBeEmpty();
+        result.EndOffset.ShouldBe(1000);
+    }
+
+    /// <summary>
+    /// A line too long with its line feed is consumed; one without line feed is not, so that it is tried again once ended
+    /// </summary>
+    [Fact]
+    public void LineTooLongIsConsumedOnlyWhenEnded()
+    {
+        // Writing a line too long that is ended, then one that is not, read with a limit of 8 bytes per line
+        string fullPath = WriteText("projects/C--p/s.jsonl", "0123456789\nok\n0123456789");
+
+        // Reading the complete lines
+        LineReadResult result = new ClaudeFileReader(_folder, 8).ReadCompleteLines(fullPath, 0, _ => { });
+
+        // Checking the counts and the end position
+        result.LineCount.ShouldBe(1);
+        result.TooLongLineCount.ShouldBe(1);
+        result.EndOffset.ShouldBe(14);
+    }
+
+    /// <summary>
+    /// The end position is right at the edges of the blocks: a line feed as the last byte of a block, and a line too long
+    /// and unfinished across blocks, which is left before the end position
+    /// </summary>
+    [Fact]
+    public void EndPositionIsRightAtTheEdgesOfTheBlocks()
+    {
+        // Writing a line whose line feed is the last byte of the first block, then a line too long without line feed
+        const int BlockSize = 81920;
+        string fullPath = WriteText("projects/C--p/s.jsonl", new string('a', BlockSize - 1) + "\n" + new string('z', 200000));
+
+        // Reading the complete lines, with a limit of 100 000 bytes per line
+        LineReadResult result = new ClaudeFileReader(_folder, 100000).ReadCompleteLines(fullPath, 0, _ => { });
+
+        // Checking that the end position is just after the line feed, and that the unfinished line is not counted yet
+        result.LineCount.ShouldBe(1);
+        result.TooLongLineCount.ShouldBe(0);
+        result.EndOffset.ShouldBe(BlockSize);
+    }
+
+    /// <summary>
+    /// The incremental reading has the same gates: a file outside the allow-list is refused, a negative position too
+    /// </summary>
+    [Fact]
+    public void IncrementalReadingHasTheSameGates()
+    {
+        // Writing a transcript in the forbidden memory folder
+        string forbidden = WriteText("projects/C--p/memory/m.jsonl", "invented-memory\n");
+        ClaudeFileReader reader = new ClaudeFileReader(_folder);
+        List<string> lines = new List<string>();
+
+        // Reading it, then reading with a negative position
+        LineReadResult result = reader.ReadCompleteLines(forbidden, 0, lines.Add);
+        ArgumentOutOfRangeException negative = Should.Throw<ArgumentOutOfRangeException>(() => reader.ReadCompleteLines(forbidden, -1, lines.Add));
+
+        // Checking the refusals
+        result.Failure.ShouldBe(FileReadFailure.NotAllowed);
+        lines.ShouldBeEmpty();
+        negative.ParamName.ShouldBe("startOffset");
     }
 
     /// <summary>
