@@ -26,6 +26,14 @@ namespace OpenSpaceIA.Reader;
 /// doc/analyse/claude-model-decisions.md).</para>
 /// <para><b>Behavior:</b> immutable. The files are known by their size and their last write, in UTC; a description that
 /// does not exist has a size of -1. The problems of the reading are kept with the run, so that they are reported again.</para>
+/// <para><b>Known limit:</b> a file rewritten with the same size and the same last write is not seen as changed, and the run
+/// keeps what was read before until the next write of the file. NTFS stores the last write to 100 ns (MS-FSA, appendix A),
+/// but Microsoft only guarantees that it is right once the handle that wrote is closed (Win32 "File Times"): two writes a
+/// few milliseconds apart can get the same last write, as seen on the CI on 2026-10-31 (the cause on that machine, its
+/// clock, is not verified). Accepted for 0.4.0: a description of Claude Code changes when its run ends, by gaining its end
+/// (doc/analyse/spike-claude-files.md), so its size changes; and comparing the content would mean reading every file at
+/// each snapshot, which the cache exists to avoid. Pinned by the test
+/// <c>SubagentRunReaderTests.RewriteWithTheSameSizeAndTheSameLastWriteIsNotSeen</c>.</para>
 /// </remarks>
 internal sealed record CachedRun
 {
@@ -157,7 +165,8 @@ internal sealed record CachedRun
     /// <param name="metaLength">Size of the description now; -1 when it does not exist</param>
     /// <param name="metaWriteUtc">Last write of the description now, in UTC</param>
     /// <returns>
-    /// True  ==> Both files have the same size and the same last write: the run can be taken from the cache<br/>
+    /// True  ==> Both files have the same size and the same last write: the run can be taken from the cache (a rewrite that
+    /// keeps both is not seen: see the known limit of the type)<br/>
     /// False ==> A file has changed: the run must be read again
     /// </returns>
     public bool IsSameAs(long transcriptLength, DateTime transcriptWriteUtc, long metaLength, DateTime metaWriteUtc)

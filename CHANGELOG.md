@@ -44,6 +44,7 @@ The reader of `~/.claude`: a read-only adapter that turns the files of Claude Co
 ### Fixed
 
 - Spike on the files of Claude Code: an agent is identified by the `name` of its front matter, not by its file name, and Claude Code also reads the subfolders of `agents/` (Claude Code documentation).
+- Tests of the Reader: the test of a description rewritten with the same size failed on the CI (2 times out of 2 on the push into `dev`, 2026-10-31), since two writes a few milliseconds apart got the same last write and the cache of the runs knows a file by its size and its last write only. The test now sets the new last write itself, and a new test pins the known limit of the cache: a rewrite that keeps the size and the last write is not seen until the next write (`CachedRun`). Fixed by an exception to the release process, decided by Michaël Defraene: `release/0.4.0` was already merged into `dev` and deleted, so the fix went from `fix/run-cache-test`, made from `dev`, into `dev`; the process of `CONTRIBUTING.md` is unchanged.
 
 ## [0.3.0] - 2026-10-30
 
