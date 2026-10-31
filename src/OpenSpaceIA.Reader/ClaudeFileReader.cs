@@ -101,6 +101,11 @@ internal sealed class ClaudeFileReader
     /// </summary>
     public long MaximumBytes { get; }
 
+    /// <summary>
+    /// Folder of Claude Code read by this reader, with its allow-list
+    /// </summary>
+    public ClaudeFolder Folder => _folder;
+
     #endregion
 
     #region Delegates

@@ -104,9 +104,14 @@ transcript without its description.
 
 ## 4. `agents/`: the agent definitions
 
-One `<name>.md` per user agent, with a front matter of exactly four keys: `name` (same as the file name), `description`,
-`tools` (comma-separated) and `model` (`sonnet`, `opus`…). Built-in agents (`general-purpose`, `Explore`) have no file:
-the application must know them without one. Files such as `*.md.bak-<date>` are not definitions.
+One `<name>.md` per user agent, with a front matter of exactly four keys: `name`, `description`, `tools`
+(comma-separated) and `model` (`sonnet`, `opus`…). Built-in agents (`general-purpose`, `Explore`) have no file: the
+application must know them without one. Files such as `*.md.bak-<date>` are not definitions.
+
+Corrected in 0.4.0, from the Claude Code documentation ("Create custom subagents"): the agent is identified by its `name`,
+and the file name does not have to match it (here, they are the same). Only `name` and `description` are required; a
+file without `name` is skipped. A name has at most 256 characters and no colon. Claude Code also reads the subfolders of
+`agents/`; when two files give the same name, it keeps one of them in an order it does not document.
 
 ## 5. Task lists
 

@@ -225,6 +225,19 @@ public sealed class ClaudeFileReaderTests : IDisposable
     }
 
     /// <summary>
+    /// The folder given to the reader is the one it reads
+    /// </summary>
+    [Fact]
+    public void FolderIsKept()
+    {
+        // Building the reader
+        ClaudeFileReader reader = new ClaudeFileReader(_folder);
+
+        // Checking the folder
+        reader.Folder.ShouldBeSameAs(_folder);
+    }
+
+    /// <summary>
     /// An explicit limit is kept
     /// </summary>
     [Fact]
