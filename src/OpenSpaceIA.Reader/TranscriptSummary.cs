@@ -6,7 +6,6 @@
  */
 
 // Using
-using System.Globalization;
 using System.Text.Json;
 
 // Static using
@@ -48,15 +47,6 @@ internal sealed class TranscriptSummary
     #endregion
 
     #region Variables
-
-    /// <summary>
-    /// Formats of a time accepted: a full date and time, with fractions of a second or not, then <c>Z</c> or an offset
-    /// </summary>
-    private static readonly string[] _timeFormats = new string[]
-    {
-        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'",
-        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz",
-    };
 
     /// <summary>
     /// Latest time accepted, in UTC
@@ -176,9 +166,7 @@ internal sealed class TranscriptSummary
 
         // Reading a full ISO time with its offset, not later than the latest time accepted
         string? text = value.ValueKind == JsonValueKind.String ? ReadString(value) : null;
-        if (text is null
-            || !DateTimeOffset.TryParseExact(text, _timeFormats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTimeOffset time)
-            || time > _latestAcceptedUtc)
+        if (!TranscriptTime.TryRead(text, _latestAcceptedUtc, out DateTimeOffset time))
         {
             isRead = false;
 
@@ -187,7 +175,7 @@ internal sealed class TranscriptSummary
         }
 
         // Function's return
-        return time.ToUniversalTime();
+        return time;
     }
 
     /// <summary>

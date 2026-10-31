@@ -2,7 +2,7 @@
  *	@file	src/OpenSpaceIA.Reader/TranscriptCursor.cs
  *	@author	Defraene Michaël (AKA Sonic) (co-written by Claude)
  *
- *	@brief	Where the reading of the transcript of a chief stopped, and what it found so far
+ *	@brief	Where the reading of the transcript of a chief stopped, and what was found so far
  */
 
 // Using
@@ -18,17 +18,19 @@
 namespace OpenSpaceIA.Reader;
 
 /// <summary>
-/// Where the reading of the transcript of a chief stopped, and what it found so far
+/// Where the reading of the transcript of a chief stopped, and what its follower found so far
 /// </summary>
 /// <remarks>
 /// <para><b>Purpose:</b> the transcript of a chief can hold hundreds of megabytes (305 MB measured on 2026-10-31); it is read
 /// once, then only where it grew. Nothing is written on the disk (decision 6 of doc/analyse/claude-model-decisions.md).</para>
-/// <para><b>Behavior:</b> holds the position just after the last complete line read, the open tool calls found up to it,
-/// and the number of lines skipped up to it. A transcript shorter than the position, or whose byte just before the position
-/// is not a line feed (checked by the reader), is not the one that was read: the cursor starts again from the start, with
-/// nothing found.</para>
+/// <para><b>Behavior:</b> holds the position just after the last complete line read, the follower that got the lines up to
+/// it, and the number of lines skipped up to it. A transcript shorter than the position, or whose byte just before the
+/// position is not a line feed (checked by <see cref="TranscriptFollowing"/>), is not the one that was read: the cursor starts
+/// again from the start, with a new follower.</para>
 /// </remarks>
-internal sealed class TranscriptCursor
+/// <typeparam name="TFollower">Type of what follows the transcript</typeparam>
+internal sealed class TranscriptCursor<TFollower>
+    where TFollower : ITranscriptFollower, new()
 {
     #region Members
 
@@ -74,9 +76,9 @@ internal sealed class TranscriptCursor
     public long Offset { get; private set; }
 
     /// <summary>
-    /// Tool calls left open up to the position
+    /// What follows the transcript, with what it found up to the position
     /// </summary>
-    public OpenToolCalls Calls { get; private set; } = new OpenToolCalls();
+    public TFollower Follower { get; private set; } = new TFollower();
 
     /// <summary>
     /// Number of lines skipped up to the position because they were longer than the limit
@@ -120,7 +122,7 @@ internal sealed class TranscriptCursor
     /// </summary>
     /// <param name="length">Size of the transcript now, in bytes</param>
     /// <returns>
-    /// True  ==> The transcript was shorter: the cursor starts again from the start, with nothing found<br/>
+    /// True  ==> The transcript was shorter: the cursor starts again from the start, with a new follower<br/>
     /// False ==> The transcript is not shorter: the cursor is kept
     /// </returns>
     public bool RestartIfShorter(long length)
@@ -140,13 +142,13 @@ internal sealed class TranscriptCursor
     }
 
     /// <summary>
-    /// Method used to start again from the start of the transcript, with nothing found
+    /// Method used to start again from the start of the transcript, with a new follower
     /// </summary>
     public void Restart()
     {
         // Forgetting the position and what was found
         Offset = 0;
-        Calls = new OpenToolCalls();
+        Follower = new TFollower();
         TooLongLineCount = 0;
     }
 

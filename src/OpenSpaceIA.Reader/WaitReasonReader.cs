@@ -26,9 +26,9 @@ namespace OpenSpaceIA.Reader;
 /// (doc/analyse/claude-model-decisions.md, decision 2).</para>
 /// <para><b>Behavior:</b> only the sessions whose status is waiting are read. The transcript of a session is
 /// <c>projects/&lt;project&gt;/&lt;session&gt;.jsonl</c>; it is searched in every project folder, never in a <c>memory</c>
-/// folder (in any case) nor through a link. It is read with <see cref="ClaudeFileReader.ReadCompleteLines"/>, from where the
-/// previous reading of this instance stopped: only its new complete lines are read, and a transcript that became shorter, or
-/// whose byte before the cursor is not a line feed any more (rewritten), is read again from its start. The reason is given
+/// folder (in any case) nor through a link. It is followed with <see cref="TranscriptFollowing"/>, from where the previous
+/// reading of this instance stopped: only its new complete lines are read, and a transcript that became shorter, or whose
+/// byte before the cursor is not a line feed any more (rewritten), is read again from its start. The reason is given
 /// by <see cref="OpenToolCalls"/>. A waiting session always gets a reason: when its transcript is missing, it gets a
 /// question (the decision for a wait without open call) and the doubt is reported; when its transcript cannot be read, the
 /// reason comes from what was read, the doubt is reported, and the cursor is forgotten so that the next reading starts again
@@ -69,7 +69,7 @@ internal sealed class WaitReasonReader
     /// <summary>
     /// Where the reading of each transcript stopped, by full path of the transcript
     /// </summary>
-    private readonly Dictionary<string, TranscriptCursor> _cursors = new Dictionary<string, TranscriptCursor>(StringComparer.Ordinal);
+    private readonly Dictionary<string, TranscriptCursor<OpenToolCalls>> _cursors = new Dictionary<string, TranscriptCursor<OpenToolCalls>>(StringComparer.Ordinal);
 
     #endregion
 
@@ -174,58 +174,6 @@ internal sealed class WaitReasonReader
     }
 
     /// <summary>
-    /// Method used to read the new complete lines of a transcript into its cursor, checking that it is still the transcript
-    /// that was read
-    /// </summary>
-    /// <remarks>
-    /// <para><b>Purpose:</b> a cursor always stops just after a line feed; when the byte there is not one any more, the
-    /// transcript was rewritten, and reading from the cursor would give the end of a line as if it were a record.</para>
-    /// <para><b>Behavior:</b> after a first reading, the lines are read from the byte before the cursor: when that byte is a
-    /// line feed, the first line given is empty and is left out, and the others go to the open calls; when it is not, nothing
-    /// goes to the open calls, and the transcript is read again from its start.</para>
-    /// </remarks>
-    /// <param name="path">[Cannot be null] Full path of the transcript</param>
-    /// <param name="cursor">[Cannot be null] Cursor of the transcript</param>
-    /// <returns>The result of the last reading</returns>
-    private LineReadResult ReadNewLines(string path, TranscriptCursor cursor)
-    {
-        // Reading from the start of a transcript never read
-        if (cursor.Offset == 0)
-        {
-            // Function's return
-            return _fileReader.ReadCompleteLines(path, 0, cursor.Calls.Add);
-        }
-
-        // Reading from the byte before the cursor, which must be the line feed of the last line read
-        bool isFirstLine = true;
-        bool isSameTranscript = false;
-        LineReadResult result = _fileReader.ReadCompleteLines(path, cursor.Offset - 1, line =>
-        {
-            if (isFirstLine)
-            {
-                isFirstLine = false;
-                isSameTranscript = line.Length == 0;
-            }
-            else if (isSameTranscript)
-            {
-                cursor.Calls.Add(line);
-            }
-        });
-
-        // Keeping a reading of the same transcript; reading a rewritten one again from its start (the byte before the cursor
-        // is not a line feed, or no complete line follows it)
-        if (!result.IsSuccess || isSameTranscript)
-        {
-            // Function's return
-            return result;
-        }
-        cursor.Restart();
-
-        // Function's return
-        return _fileReader.ReadCompleteLines(path, 0, cursor.Calls.Add);
-    }
-
-    /// <summary>
     /// Method used to read the reason of the wait of a session
     /// </summary>
     /// <param name="session">[Cannot be null] Waiting session</param>
@@ -245,30 +193,28 @@ internal sealed class WaitReasonReader
             return WaitReason.Question;
         }
 
-        // Starting again from the start of a transcript that is not the one read before (shorter, or rewritten)
+        // Following the transcript from where the previous reading stopped
         string path = transcript.FullName;
         used.Add(path);
-        if (!_cursors.TryGetValue(path, out TranscriptCursor? cursor))
+        if (!_cursors.TryGetValue(path, out TranscriptCursor<OpenToolCalls>? cursor))
         {
-            cursor = new TranscriptCursor();
+            cursor = new TranscriptCursor<OpenToolCalls>();
             _cursors[path] = cursor;
         }
-        cursor.RestartIfShorter(transcript.Length);
 
         // Reading the new complete lines; a failure forgets the cursor, so that the next reading starts again cleanly
-        LineReadResult result = ReadNewLines(path, cursor);
+        LineReadResult result = TranscriptFollowing.Follow(_fileReader, path, transcript.Length, cursor);
         if (!result.IsSuccess)
         {
             problems.Add(new ReadProblem(path, $"The transcript cannot be read ({result.Failure}): {result.Detail}; the reason of the wait is taken from what was read"));
             _cursors.Remove(path);
 
             // Function's return
-            return cursor.Calls.GetWaitReason();
+            return cursor.Follower.GetWaitReason();
         }
-        cursor.MoveTo(result.EndOffset, result.TooLongLineCount);
 
         // Reporting the lines that cannot be read, since one of them may close or open a call
-        int unreadable = cursor.Calls.UnreadableLineCount + cursor.TooLongLineCount;
+        int unreadable = cursor.Follower.UnreadableLineCount + cursor.TooLongLineCount;
         if (unreadable > 0)
         {
             problems.Add(new ReadProblem(path, string.Create(CultureInfo.InvariantCulture,
@@ -276,7 +222,7 @@ internal sealed class WaitReasonReader
         }
 
         // Function's return
-        return cursor.Calls.GetWaitReason();
+        return cursor.Follower.GetWaitReason();
     }
 
     #endregion
