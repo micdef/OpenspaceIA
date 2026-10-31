@@ -212,6 +212,38 @@ public sealed class OpenToolCallsTests
     }
 
     /// <summary>
+    /// A call is opened only by a record of the assistant and closed only by a record of the user: the copies of the
+    /// requests (api-request-blob) and the other kinds of record change nothing
+    /// </summary>
+    [Fact]
+    public void OnlyTheAssistantOpensAndOnlyTheUserCloses()
+    {
+        // Following an open read, then records of other kinds that hold calls and results
+        OpenToolCalls calls = Follow(
+            Calls(("toolu_1", "Read")),
+            "{\"type\":\"user\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_2\",\"name\":\"Bash\"}]}}",
+            "{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_1\"}]}}",
+            "{\"type\":\"api-request-blob\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_1\"},{\"type\":\"tool_use\",\"id\":\"toolu_3\",\"name\":\"AskUserQuestion\"}]}}");
+
+        // Checking that only the first read is open
+        calls.Count.ShouldBe(1);
+        calls.GetWaitReason().ShouldBe(WaitReason.Permission);
+    }
+
+    /// <summary>
+    /// A blank line is left out without being counted
+    /// </summary>
+    [Fact]
+    public void BlankLineIsNotCounted()
+    {
+        // Following blank lines
+        OpenToolCalls calls = Follow(string.Empty, "   ", "\t");
+
+        // Checking the count
+        calls.UnreadableLineCount.ShouldBe(0);
+    }
+
+    /// <summary>
     /// A line that cannot be read is counted, and changes nothing
     /// </summary>
     [Fact]

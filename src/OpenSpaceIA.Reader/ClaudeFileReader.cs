@@ -48,6 +48,12 @@ internal sealed class ClaudeFileReader
     public const long DefaultMaximumBytes = 1048576;
 
     /// <summary>
+    /// Default size limit of a line of a transcript: 16 MiB, far above the longest line measured on 2026-10-31 (1.92 MB, the
+    /// result of reading a document), so that the result that closes a tool call is never skipped
+    /// </summary>
+    public const long DefaultMaximumLineBytes = 16777216;
+
+    /// <summary>
     /// Size of the blocks read from the file
     /// </summary>
     private const int BlockSize = 81920;
@@ -98,10 +104,14 @@ internal sealed class ClaudeFileReader
     #region Members & Properties
 
     /// <summary>
-    /// Size limit, in bytes: of a file read in one go (the byte order mark included), and of each line of a file read line by
-    /// line (without its line feed); a larger file is refused, a longer line is skipped
+    /// Size limit of a file read in one go, in bytes (the byte order mark included); a larger file is refused
     /// </summary>
     public long MaximumBytes { get; }
+
+    /// <summary>
+    /// Size limit of each line of a file read line by line, in bytes (without its line feed); a longer line is skipped
+    /// </summary>
+    public long MaximumLineBytes { get; }
 
     /// <summary>
     /// Folder of Claude Code read by this reader, with its allow-list
@@ -121,12 +131,24 @@ internal sealed class ClaudeFileReader
     #region Constructors
 
     /// <summary>
-    /// Constructor, with the default size limit
+    /// Constructor, with the default size limits
     /// </summary>
     /// <param name="folder">[Cannot be null] Folder of Claude Code, with its allow-list</param>
     /// <exception cref="ArgumentNullException">If the folder is null</exception>
     public ClaudeFileReader(ClaudeFolder folder)
-        : this(folder, DefaultMaximumBytes)
+        : this(folder, DefaultMaximumBytes, DefaultMaximumLineBytes)
+    {
+    }
+
+    /// <summary>
+    /// Constructor, with one size limit for a file and for a line
+    /// </summary>
+    /// <param name="folder">[Cannot be null] Folder of Claude Code, with its allow-list</param>
+    /// <param name="maximumBytes">Size limit of a file and of a line, in bytes; from 1 to the largest size of an array</param>
+    /// <exception cref="ArgumentNullException">If the folder is null</exception>
+    /// <exception cref="ArgumentOutOfRangeException">If the size limit is less than 1, or too large for one array</exception>
+    public ClaudeFileReader(ClaudeFolder folder, long maximumBytes)
+        : this(folder, maximumBytes, maximumBytes)
     {
     }
 
@@ -134,20 +156,24 @@ internal sealed class ClaudeFileReader
     /// Constructor
     /// </summary>
     /// <param name="folder">[Cannot be null] Folder of Claude Code, with its allow-list</param>
-    /// <param name="maximumBytes">Size limit of a file, in bytes; from 1 to the largest size of an array</param>
+    /// <param name="maximumBytes">Size limit of a file read in one go, in bytes; from 1 to the largest size of an array</param>
+    /// <param name="maximumLineBytes">Size limit of a line, in bytes; from 1 to the largest size of an array</param>
     /// <exception cref="ArgumentNullException">If the folder is null</exception>
-    /// <exception cref="ArgumentOutOfRangeException">If the size limit is less than 1, or too large for one array</exception>
-    public ClaudeFileReader(ClaudeFolder folder, long maximumBytes)
+    /// <exception cref="ArgumentOutOfRangeException">If a size limit is less than 1, or too large for one array</exception>
+    public ClaudeFileReader(ClaudeFolder folder, long maximumBytes, long maximumLineBytes)
     {
         // Checks
         if (folder is null)
             throw new ArgumentNullException(nameof(folder), $"The value of the parameter: {nameof(folder)} cannot be null");
         if (maximumBytes < 1 || maximumBytes >= Array.MaxLength)
             throw new ArgumentOutOfRangeException(nameof(maximumBytes), maximumBytes, $"The value of the parameter: {nameof(maximumBytes)} must be from 1 to {Array.MaxLength - 1}");
+        if (maximumLineBytes < 1 || maximumLineBytes >= Array.MaxLength)
+            throw new ArgumentOutOfRangeException(nameof(maximumLineBytes), maximumLineBytes, $"The value of the parameter: {nameof(maximumLineBytes)} must be from 1 to {Array.MaxLength - 1}");
 
         // Setting the values
         _folder = folder;
         MaximumBytes = maximumBytes;
+        MaximumLineBytes = maximumLineBytes;
     }
 
     #endregion
@@ -265,7 +291,7 @@ internal sealed class ClaudeFileReader
     private bool AppendToLine(MemoryStream line, byte[] block, int offset, int count, bool isTooLong)
     {
         // Dropping the bytes of a line that is longer than the limit
-        if (isTooLong || line.Length + count > MaximumBytes)
+        if (isTooLong || line.Length + count > MaximumLineBytes)
         {
             line.SetLength(0);
 
@@ -540,7 +566,8 @@ internal sealed class ClaudeFileReader
     /// ever disturbing Claude Code.</para>
     /// <para><b>Behavior:</b> the same gates as <see cref="ReadText"/>: a file outside the allow-list is refused without
     /// touching the disk, a file reached through a link is refused, and an allowed file is opened read-only with full sharing.
-    /// Here the size limit applies to each line, not to the file: a longer line is skipped and counted. Each line is given
+    /// Here the limit of a line (<see cref="MaximumLineBytes"/>) applies to each line, and the file has no limit: a longer line
+    /// is skipped and counted. Each line is given
     /// to the action as soon as it is read, without its line feed and its carriage return, decoded as UTF-8 (a byte order mark
     /// at the start of the file is removed, invalid bytes become the replacement character). The limit counts every byte of
     /// a line but its line feed, its carriage return included. An <see cref="IOException"/> thrown by the action is reported

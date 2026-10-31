@@ -5,5 +5,7 @@
 
 ### Changed
 
+- Reader: a line of a transcript has its own size limit, 16 MiB by default, apart from the limit of 1 MiB of a small file, so that the result of reading a document (up to 1.92 MB measured) is never skipped; a skipped result would leave its tool call open for ever.
+
 - Spike of the waiting signal: the time between a tool call and its result, measured by source of the decision on a week of transcripts, and the definition of a period of waiting of the chief.
 - Roadmap: `feature/reader-chief-periods` comes after `feature/reader-waiting-signal`.

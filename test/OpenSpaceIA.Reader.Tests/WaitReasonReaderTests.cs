@@ -316,6 +316,98 @@ public sealed class WaitReasonReaderTests : IDisposable
     }
 
     /// <summary>
+    /// A transcript rewritten to the same size, or to a larger one, is read again from its start: the byte before the cursor
+    /// is not a line feed any more
+    /// </summary>
+    /// <param name="padding">Number of bytes added to the rewritten transcript</param>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(300)]
+    public void RewrittenTranscriptIsReadAgainFromItsStart(int padding)
+    {
+        // Writing a transcript with an open read, and reading it once
+        string first = Call("toolu_1", "Read");
+        WriteTranscript("s1", first);
+        WaitReasonReader reader = new WaitReasonReader(_fileReader);
+        List<LiveSession> sessions = new List<LiveSession>() { Session("s1", SessionStatus.Waiting) };
+        reader.Read(sessions).Reasons["s1"].ShouldBe(WaitReason.Permission);
+
+        // Rewriting it with a closed call and no line feed at the old cursor, at least as long as before
+        string rewritten = "{\"type\":\"user\",\"pad\":\"" + new string('p', first.Length + padding) + "\"}\n";
+        WriteTranscript("s1", rewritten);
+        WaitReasons reasons = reader.Read(sessions);
+
+        // Checking that the old open call is forgotten
+        reasons.Reasons["s1"].ShouldBe(WaitReason.Question);
+        reasons.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A transcript is not read again when it did not change: the lines already read are not counted twice
+    /// </summary>
+    [Fact]
+    public void UnchangedTranscriptIsNotReadAgain()
+    {
+        // Writing a transcript with one bad line, and reading it three times
+        WriteTranscript("s1", "{ bad\n" + Call("toolu_1", "Read"));
+        WaitReasonReader reader = new WaitReasonReader(_fileReader);
+        List<LiveSession> sessions = new List<LiveSession>() { Session("s1", SessionStatus.Waiting) };
+        reader.Read(sessions);
+        reader.Read(sessions);
+        WaitReasons reasons = reader.Read(sessions);
+
+        // Checking that the bad line is still counted once
+        reasons.Problems.Single().Reason.ShouldContain("1 lines");
+    }
+
+    /// <summary>
+    /// A result of 2 MB (the reading of a document) closes its call with the default limits
+    /// </summary>
+    [Fact]
+    public void LargeResultClosesItsCall()
+    {
+        // Writing a read whose result holds 2 MB
+        string largeResult = $"{{\"type\":\"user\",\"message\":{{\"content\":[{{\"type\":\"tool_result\",\"tool_use_id\":\"toolu_1\",\"content\":\"{new string('x', 2000000)}\"}}]}}}}\n";
+        WriteTranscript("s1", Call("toolu_1", "Read") + largeResult);
+
+        // Reading the reason
+        WaitReasons reasons = new WaitReasonReader(_fileReader).Read(new List<LiveSession>() { Session("s1", SessionStatus.Waiting) });
+
+        // Checking that the read is closed
+        reasons.Reasons["s1"].ShouldBe(WaitReason.Question);
+        reasons.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A transcript that cannot be read gives the reason of what was read before, and is read again cleanly next time
+    /// </summary>
+    [Fact]
+    public void UnreadableTranscriptIsReadAgainCleanly()
+    {
+        // Skipping where the exclusive lock is not enforced
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "The exclusive lock of FileShare.None is reliable on Windows only");
+
+        // Writing a transcript with an open read, and reading it once
+        string transcript = WriteTranscript("s1", Call("toolu_1", "Read"));
+        WaitReasonReader reader = new WaitReasonReader(_fileReader);
+        List<LiveSession> sessions = new List<LiveSession>() { Session("s1", SessionStatus.Waiting) };
+        reader.Read(sessions);
+
+        // Closing the read, then reading while the transcript is locked, then once it is free
+        File.AppendAllText(transcript, Result("toolu_1"));
+        WaitReasons locked;
+        using (FileStream locker = new FileStream(transcript, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            locked = reader.Read(sessions);
+        WaitReasons free = reader.Read(sessions);
+
+        // Checking the reason of what was read before, then the reason of the whole transcript
+        locked.Reasons["s1"].ShouldBe(WaitReason.Permission);
+        locked.Problems.Single().Reason.ShouldContain(nameof(FileReadFailure.Unreadable));
+        free.Reasons["s1"].ShouldBe(WaitReason.Question);
+        free.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
     /// The lines that cannot be read are reported once per transcript, and the reason is still given
     /// </summary>
     [Fact]

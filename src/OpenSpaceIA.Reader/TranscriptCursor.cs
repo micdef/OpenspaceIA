@@ -23,8 +23,10 @@ namespace OpenSpaceIA.Reader;
 /// <remarks>
 /// <para><b>Purpose:</b> the transcript of a chief can hold hundreds of megabytes (305 MB measured on 2026-10-31); it is read
 /// once, then only where it grew. Nothing is written on the disk (decision 6 of doc/analyse/claude-model-decisions.md).</para>
-/// <para><b>Behavior:</b> holds the position just after the last complete line read, and the open tool calls found up to
-/// it. A transcript shorter than the position was rewritten: the cursor starts again from the start, with nothing found.</para>
+/// <para><b>Behavior:</b> holds the position just after the last complete line read, the open tool calls found up to it,
+/// and the number of lines skipped up to it. A transcript shorter than the position, or whose byte just before the position
+/// is not a line feed (checked by the reader), is not the one that was read: the cursor starts again from the start, with
+/// nothing found.</para>
 /// </remarks>
 internal sealed class TranscriptCursor
 {
@@ -76,6 +78,11 @@ internal sealed class TranscriptCursor
     /// </summary>
     public OpenToolCalls Calls { get; private set; } = new OpenToolCalls();
 
+    /// <summary>
+    /// Number of lines skipped up to the position because they were longer than the limit
+    /// </summary>
+    public int TooLongLineCount { get; private set; }
+
     #endregion
 
     #region Delegates
@@ -126,26 +133,40 @@ internal sealed class TranscriptCursor
         }
 
         // Starting again from the start
-        Offset = 0;
-        Calls = new OpenToolCalls();
+        Restart();
 
         // Function's return
         return true;
     }
 
     /// <summary>
+    /// Method used to start again from the start of the transcript, with nothing found
+    /// </summary>
+    public void Restart()
+    {
+        // Forgetting the position and what was found
+        Offset = 0;
+        Calls = new OpenToolCalls();
+        TooLongLineCount = 0;
+    }
+
+    /// <summary>
     /// Method used to move the cursor to the end of a reading
     /// </summary>
     /// <param name="offset">End position of the reading, not before the current position</param>
-    /// <exception cref="ArgumentOutOfRangeException">If the position is before the current one</exception>
-    public void MoveTo(long offset)
+    /// <param name="tooLongLineCount">Number of lines skipped by the reading because they were too long, 0 or more</param>
+    /// <exception cref="ArgumentOutOfRangeException">If the position is before the current one, or if the number is negative</exception>
+    public void MoveTo(long offset, int tooLongLineCount)
     {
-        // Check
+        // Checks
         if (offset < Offset)
             throw new ArgumentOutOfRangeException(nameof(offset), offset, $"The value of the parameter: {nameof(offset)} cannot be before the current position");
+        if (tooLongLineCount < 0)
+            throw new ArgumentOutOfRangeException(nameof(tooLongLineCount), tooLongLineCount, $"The value of the parameter: {nameof(tooLongLineCount)} cannot be negative");
 
-        // Setting the position
+        // Setting the position, and adding the lines skipped
         Offset = offset;
+        TooLongLineCount += tooLongLineCount;
     }
 
     #endregion

@@ -222,6 +222,44 @@ public sealed class ClaudeFileReaderTests : IDisposable
         // Checking the limit
         ClaudeFileReader.DefaultMaximumBytes.ShouldBe(1048576L);
         reader.MaximumBytes.ShouldBe(ClaudeFileReader.DefaultMaximumBytes);
+        ClaudeFileReader.DefaultMaximumLineBytes.ShouldBe(16777216L);
+        reader.MaximumLineBytes.ShouldBe(ClaudeFileReader.DefaultMaximumLineBytes);
+    }
+
+    /// <summary>
+    /// The limit of a file and the limit of a line are kept apart; one limit given alone is used for both
+    /// </summary>
+    [Fact]
+    public void LimitsOfAFileAndOfALineAreKeptApart()
+    {
+        // Building readers with one limit, then with two
+        ClaudeFileReader one = new ClaudeFileReader(_folder, 32);
+        ClaudeFileReader two = new ClaudeFileReader(_folder, 32, 64);
+        ArgumentOutOfRangeException invalid = Should.Throw<ArgumentOutOfRangeException>(() => new ClaudeFileReader(_folder, 32, 0));
+
+        // Checking the limits and the parameter in fault
+        one.MaximumLineBytes.ShouldBe(32);
+        two.MaximumBytes.ShouldBe(32);
+        two.MaximumLineBytes.ShouldBe(64);
+        invalid.ParamName.ShouldBe("maximumLineBytes");
+    }
+
+    /// <summary>
+    /// With the default limits, a line of 2 MB (the result of reading a document) is read, although a file of that size would
+    /// be refused in one go
+    /// </summary>
+    [Fact]
+    public void LineOfTwoMegabytesIsReadByDefault()
+    {
+        // Writing a transcript with a line of 2 MB
+        string fullPath = WriteText("projects/C--p/s.jsonl", new string('x', 2000000) + "\nend\n");
+
+        // Reading the lines with the default limits
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking that the long line was read
+        result.TooLongLineCount.ShouldBe(0);
+        lines.Select(line => line.Length).ShouldBe(new List<int>() { 2000000, 3 });
     }
 
     /// <summary>
@@ -1050,6 +1088,26 @@ public sealed class ClaudeFileReaderTests : IDisposable
         result.LineCount.ShouldBe(1);
         result.TooLongLineCount.ShouldBe(1);
         result.EndOffset.ShouldBe(14);
+    }
+
+    /// <summary>
+    /// The end position is right at the edges of the blocks: a line feed as the last byte of a block, and a line too long
+    /// and unfinished across blocks, which is left before the end position
+    /// </summary>
+    [Fact]
+    public void EndPositionIsRightAtTheEdgesOfTheBlocks()
+    {
+        // Writing a line whose line feed is the last byte of the first block, then a line too long without line feed
+        const int BlockSize = 81920;
+        string fullPath = WriteText("projects/C--p/s.jsonl", new string('a', BlockSize - 1) + "\n" + new string('z', 200000));
+
+        // Reading the complete lines, with a limit of 100 000 bytes per line
+        LineReadResult result = new ClaudeFileReader(_folder, 100000).ReadCompleteLines(fullPath, 0, _ => { });
+
+        // Checking that the end position is just after the line feed, and that the unfinished line is not counted yet
+        result.LineCount.ShouldBe(1);
+        result.TooLongLineCount.ShouldBe(0);
+        result.EndOffset.ShouldBe(BlockSize);
     }
 
     /// <summary>
