@@ -18,7 +18,7 @@ using OpenSpaceIA.Core.Model;
 namespace OpenSpaceIA.Reader;
 
 /// <summary>
-/// Service used to read the front matter of an agent definition of Claude Code (a file <c>agents/&lt;file&gt;.md</c>)
+/// Service used to read the front matter of an agent definition of Claude Code (a file <c>agents/…/&lt;file&gt;.md</c>)
 /// </summary>
 /// <remarks>
 /// <para><b>Purpose:</b> the office needs three values of a definition: its name, its description and its model. A full YAML

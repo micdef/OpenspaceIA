@@ -340,8 +340,7 @@ public sealed class AgentDefinitionReaderTests : IDisposable
             definitions.AgentTypes.ShouldBeEmpty();
             definitions.Problems.Count.ShouldBe(1);
             definitions.Problems[0].FilePath.ShouldBe(agents);
-            definitions.Problems[0].Reason.ShouldContain("cannot be listed");
-            definitions.Problems[0].Reason.ShouldContain("link to a missing target");
+            definitions.Problems[0].Reason.ShouldContain("link");
         }
         finally
         {
@@ -354,14 +353,60 @@ public sealed class AgentDefinitionReaderTests : IDisposable
     }
 
     /// <summary>
-    /// A subfolder of the agents folder is not read, and it is reported so that its definitions are not lost silently
+    /// The definitions of the subfolders are read, as Claude Code reads them: each folder in the ordinal order of its
+    /// names, a subfolder at the place of its name
     /// </summary>
     [Fact]
-    public void SubfolderIsReportedAndNotRead()
+    public void DefinitionsOfTheSubfoldersAreRead()
     {
-        // Writing a definition at the top and one in a subfolder
-        WriteDefinition("helper.md", "helper");
-        WriteDefinition(Path.Combine("review", "reviewer.md"), "reviewer");
+        // Writing definitions at the top and in subfolders of two levels, with names whose order differs from the order of
+        // the files, so that only the order of the reading can give the expected result
+        WriteDefinition("helper.md", "e-helper");
+        WriteDefinition("z.md", "a-zed");
+        WriteDefinition(Path.Combine("review", "reviewer.md"), "c-reviewer");
+        WriteDefinition(Path.Combine("review", "security", "sec.md"), "b-sec");
+        WriteDefinition(Path.Combine("research", "r.md"), "d-r");
+        WriteDefinition(Path.Combine("review", "security", "notes.txt"), "not-a-definition");
+
+        // Reading the definitions
+        AgentDefinitions definitions = new AgentDefinitionReader(_fileReader).Read();
+
+        // Checking the result: helper.md, research/, review/ (reviewer.md, then security/), z.md
+        Names(definitions).ShouldBe("e-helper, d-r, c-reviewer, b-sec, a-zed");
+        definitions.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A subfolder deeper than 32 levels below the agents folder is not read, and it is reported: the reading never runs out
+    /// of stack, even on a tree made on purpose
+    /// </summary>
+    [Fact]
+    public void SubfolderDeeperThanTheLimitIsReported()
+    {
+        // Writing a definition at level 32, and one at level 33
+        string levels32 = Path.Combine(Enumerable.Repeat("d", 32).ToArray());
+        WriteDefinition(Path.Combine(levels32, "deep.md"), "deep");
+        WriteDefinition(Path.Combine(levels32, "d", "deeper.md"), "deeper");
+
+        // Reading the definitions
+        AgentDefinitions definitions = new AgentDefinitionReader(_fileReader).Read();
+
+        // Checking the result
+        Names(definitions).ShouldBe("deep");
+        definitions.Problems.Count.ShouldBe(1);
+        definitions.Problems[0].FilePath.ShouldBe(Path.Combine(_root, "agents", levels32, "d"));
+        definitions.Problems[0].Reason.ShouldContain("deeper than 32 levels");
+    }
+
+    /// <summary>
+    /// The same name in a subfolder and at the top: the first in the order of the reading is kept, the other is reported
+    /// </summary>
+    [Fact]
+    public void SameNameInASubfolderIsReported()
+    {
+        // Writing two definitions of the same agent, one in a subfolder
+        string first = WriteDefinition("a.md", "helper");
+        string second = WriteDefinition(Path.Combine("b", "helper.md"), "helper");
 
         // Reading the definitions
         AgentDefinitions definitions = new AgentDefinitionReader(_fileReader).Read();
@@ -369,8 +414,72 @@ public sealed class AgentDefinitionReaderTests : IDisposable
         // Checking the result
         Names(definitions).ShouldBe("helper");
         definitions.Problems.Count.ShouldBe(1);
-        definitions.Problems[0].FilePath.ShouldBe(Path.Combine(_root, "agents", "review"));
-        definitions.Problems[0].Reason.ShouldContain("subfolder");
+        definitions.Problems[0].FilePath.ShouldBe(second);
+        definitions.Problems[0].Reason.ShouldContain(first);
+    }
+
+    /// <summary>
+    /// The same name in a subfolder read before a file of the top: the definition of the subfolder is kept
+    /// </summary>
+    [Fact]
+    public void SameNameInASubfolderReadFirstIsKept()
+    {
+        // Writing two definitions of the same agent, the subfolder coming first in the order of the names
+        string first = WriteDefinition(Path.Combine("a", "helper.md"), "helper");
+        string second = WriteDefinition("b.md", "helper");
+
+        // Reading the definitions
+        AgentDefinitions definitions = new AgentDefinitionReader(_fileReader).Read();
+
+        // Checking the result
+        Names(definitions).ShouldBe("helper");
+        definitions.Problems.Count.ShouldBe(1);
+        definitions.Problems[0].FilePath.ShouldBe(second);
+        definitions.Problems[0].Reason.ShouldContain(first);
+    }
+
+    /// <summary>
+    /// A subfolder that is a link (a junction on Windows, a symbolic link on Linux) is not followed, and it is reported: it
+    /// could lead out of the folder of Claude Code, or into a loop
+    /// </summary>
+    [Fact]
+    public void LinkToAFolderIsReportedAndNotFollowed()
+    {
+        // Writing a definition outside the folder, and a link inside the agents folder that leads to it
+        WriteDefinition("helper.md", "helper");
+        string outside = Path.Combine(_workFolder, "outside");
+        Directory.CreateDirectory(outside);
+        File.WriteAllText(Path.Combine(outside, "x.md"), "---\nname: outsider\n---\n");
+        string link = Path.Combine(_root, "agents", "linked");
+        if (OperatingSystem.IsWindows())
+        {
+            using Process mklink = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{outside}\"") { CreateNoWindow = true, UseShellExecute = false })!;
+            mklink.WaitForExit();
+            mklink.ExitCode.ShouldBe(0);
+        }
+        else
+        {
+            Directory.CreateSymbolicLink(link, outside);
+        }
+        try
+        {
+            // Reading the definitions
+            AgentDefinitions definitions = new AgentDefinitionReader(_fileReader).Read();
+
+            // Checking that the link is reported and not followed
+            Names(definitions).ShouldBe("helper");
+            definitions.Problems.Count.ShouldBe(1);
+            definitions.Problems[0].FilePath.ShouldBe(link);
+            definitions.Problems[0].Reason.ShouldContain("not followed");
+        }
+        finally
+        {
+            // Removing the link itself: a junction is removed as a folder, a symbolic link of Linux as a file
+            if (OperatingSystem.IsWindows())
+                Directory.Delete(link);
+            else
+                File.Delete(link);
+        }
     }
 
     /// <summary>
@@ -464,18 +573,22 @@ public sealed class AgentDefinitionReaderTests : IDisposable
     [Fact]
     public void AgentsFolderThroughAJunctionIsNotRead()
     {
-        // Skipping where junctions do not exist
-        Assert.SkipUnless(OperatingSystem.IsWindows(), "Junctions are a feature of NTFS");
-
-        // Writing a definition outside the folder, and an agents junction that leads to it
+        // Writing definitions outside the folder, one in a subfolder, and an agents link that leads to them (a junction on
+        // Windows, where a symbolic link needs a privilege)
         string outside = Path.Combine(_workFolder, "outside");
-        Directory.CreateDirectory(outside);
+        Directory.CreateDirectory(Path.Combine(outside, "sub"));
         File.WriteAllText(Path.Combine(outside, "helper.md"), "---\nname: helper\n---\n");
+        File.WriteAllText(Path.Combine(outside, "sub", "other.md"), "---\nname: other\n---\n");
         string junction = Path.Combine(_root, "agents");
-        using (Process mklink = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junction}\" \"{outside}\"") { CreateNoWindow = true, UseShellExecute = false })!)
+        if (OperatingSystem.IsWindows())
         {
+            using Process mklink = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junction}\" \"{outside}\"") { CreateNoWindow = true, UseShellExecute = false })!;
             mklink.WaitForExit();
             mklink.ExitCode.ShouldBe(0);
+        }
+        else
+        {
+            Directory.CreateSymbolicLink(junction, outside);
         }
         try
         {
@@ -484,15 +597,18 @@ public sealed class AgentDefinitionReaderTests : IDisposable
             // Reading the definitions
             AgentDefinitions definitions = new AgentDefinitionReader(_fileReader).Read();
 
-            // Checking that nothing was read, and that the refusal is reported
+            // Checking that the link is not walked: one problem for the folder, none per file
             definitions.AgentTypes.ShouldBeEmpty();
             definitions.Problems.Count.ShouldBe(1);
-            definitions.Problems[0].Reason.ShouldContain(nameof(FileReadFailure.NotAllowed));
+            definitions.Problems[0].FilePath.ShouldBe(junction);
+            definitions.Problems[0].Reason.ShouldContain("not followed");
         }
         finally
         {
-            // Removing the junction itself, not what it leads to, so that the cleanup can delete the folder
-            if (Directory.Exists(junction))
+            // Removing the link itself, not what it leads to, so that the cleanup can delete the folder
+            if (!OperatingSystem.IsWindows())
+                File.Delete(junction);
+            else if (Directory.Exists(junction))
                 Directory.Delete(junction);
         }
     }
@@ -507,15 +623,16 @@ public sealed class AgentDefinitionReaderTests : IDisposable
         string good = WriteDefinition("a.md", "alpha");
         string broken = WriteText("agents/b.md", "invented");
         WriteDefinition("a.md.bak", "old");
-        WriteDefinition(Path.Combine("sub", "c.md"), "gamma");
+        string inSubfolder = WriteDefinition(Path.Combine("sub", "c.md"), "gamma");
         File.SetAttributes(good, FileAttributes.ReadOnly);
         File.SetAttributes(broken, FileAttributes.ReadOnly);
+        File.SetAttributes(inSubfolder, FileAttributes.ReadOnly);
         List<string> before = Snapshot();
         AgentDefinitionReader reader = new AgentDefinitionReader(_fileReader);
 
         // Reading several times
         for (int turn = 0; turn < 3; turn++)
-            reader.Read().AgentTypes.Count.ShouldBe(1);
+            reader.Read().AgentTypes.Count.ShouldBe(2);
 
         // Checking that nothing changed
         Snapshot().ShouldBe(before);
