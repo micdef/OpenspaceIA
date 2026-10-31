@@ -19,7 +19,7 @@ by Kenobi) prove exactly these rules. They build on [claude-model-decisions.md](
 | State | The chief (a main session) | Another agent |
 |-------|----------------------------|---------------|
 | **Working** | `status` is `busy` | At least one of its runs is in progress |
-| **Waiting for you** | `status` is `waiting`; the reason is the tool call left open: `AskUserQuestion` → a question, any other tool → a permission | — (sub-agent runs do not wait for the user: they run in the background) |
+| **Waiting for you** | `status` is `waiting`; the reason is the tool call left open: `AskUserQuestion` or `ExitPlanMode` (the approval of a plan) → a question, any other tool → a permission, no open call → a question (decisions of Michaël, 2026-10-31) | — (sub-agent runs do not wait for the user: they run in the background) |
 | **Idle** | `status` is `idle` | No run in progress |
 
 A session that is closed (its file is gone, its process is dead, or its process start differs from `procStart`) is not
