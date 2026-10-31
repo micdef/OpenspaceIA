@@ -291,6 +291,8 @@ public sealed class ClaudeFolderTests
     [InlineData("projects/C--p/s1/agent-a1.meta.json")]
     [InlineData("projects/C--p/memory/subagents/agent-a1.meta.json")]
     [InlineData("projects/subagents/agent-a1.meta.json")]
+    [InlineData("projects/C--p/subagents/agent-a1.meta.json")]
+    [InlineData("projects/C--p/s1/deeper/subagents/agent-a1.meta.json")]
     [InlineData("projects/C--p/x.JSONL")]
     [InlineData("agents/sub/x.MD")]
     [InlineData("agents/sub/.md")]

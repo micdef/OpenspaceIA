@@ -56,6 +56,11 @@ public sealed class SubagentRunReaderTests : IDisposable
     private static readonly DateTimeOffset _sinceUtc = new DateTimeOffset(2026, 10, 24, 0, 0, 0, TimeSpan.Zero);
 
     /// <summary>
+    /// Now, for the tests: after every record written by the tests
+    /// </summary>
+    private static readonly DateTimeOffset _nowUtc = new DateTimeOffset(2026, 11, 1, 0, 0, 0, TimeSpan.Zero);
+
+    /// <summary>
     /// Unique folder of the instance, parent of the invented .claude folder; deleted by Dispose
     /// </summary>
     private readonly string _workFolder;
@@ -195,6 +200,40 @@ public sealed class SubagentRunReaderTests : IDisposable
     }
 
     /// <summary>
+    /// Method used to create a link to a folder: a junction on Windows (a symbolic link needs a privilege there), a symbolic
+    /// link elsewhere
+    /// </summary>
+    /// <param name="link">[Cannot be null] Full path of the link</param>
+    /// <param name="target">[Cannot be null] Full path of the folder it leads to</param>
+    private static void CreateFolderLink(string link, string target)
+    {
+        // Creating the link of the system
+        if (OperatingSystem.IsWindows())
+        {
+            using Process mklink = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{link}\" \"{target}\"") { CreateNoWindow = true, UseShellExecute = false })!;
+            mklink.WaitForExit();
+            mklink.ExitCode.ShouldBe(0);
+        }
+        else
+        {
+            Directory.CreateSymbolicLink(link, target);
+        }
+    }
+
+    /// <summary>
+    /// Method used to remove a link to a folder, not what it leads to
+    /// </summary>
+    /// <param name="link">[Cannot be null] Full path of the link</param>
+    private static void RemoveFolderLink(string link)
+    {
+        // Removing the link itself: a junction is removed as a folder, a symbolic link of Linux as a file
+        if (OperatingSystem.IsWindows())
+            Directory.Delete(link);
+        else
+            File.Delete(link);
+    }
+
+    /// <summary>
     /// Method used to describe everything under the invented root: folders, files, attributes, dates, sizes and contents
     /// </summary>
     /// <returns>One line per folder or file, in a stable order</returns>
@@ -240,7 +279,7 @@ public sealed class SubagentRunReaderTests : IDisposable
     public void MissingProjectsFolderGivesNothing()
     {
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking the result
         runs.Runs.ShouldBeEmpty();
@@ -261,7 +300,7 @@ public sealed class SubagentRunReaderTests : IDisposable
             Record("2026-10-31T12:17:59.000Z", "SubagentHandback"));
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking the run: the real model of the transcript wins over the model asked
         runs.Runs.ShouldBe(new List<AgentRun>()
@@ -284,7 +323,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         WriteRun("a3", "{\"agentType\":\"Explore\",\"finished\":false}", Record("2026-10-31T12:00:00Z", "Read"));
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking the ends
         runs.Runs.Select(run => $"{run.Id}={run.IsFinished}").ShouldBe(new List<string>() { "a1=True", "a2=True", "a3=False" });
@@ -300,7 +339,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         WriteRun("a1", "{\"agentType\":\"Explore\",\"model\":\"haiku\"}", Record("2026-10-31T12:00:00Z"));
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking the model
         runs.Runs.Single().Model.ShouldBe("haiku");
@@ -317,7 +356,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         WriteRun("a2", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking the result
         runs.Runs.Select(run => run.Id).ShouldBe(new List<string>() { "a2" });
@@ -340,7 +379,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         string transcript = WriteRun("a1", "{\"agentType\":\"Explore\"}", line);
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking the result
         runs.Runs.ShouldBeEmpty();
@@ -359,7 +398,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         string transcript = WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"), "{ bad", "[1]", "{ bad again", Record("2026-10-31T12:05:00Z"));
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking the result
         runs.Runs.Count.ShouldBe(1);
@@ -379,7 +418,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         File.SetLastWriteTimeUtc(old, _sinceUtc.UtcDateTime.AddSeconds(-1));
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking that nothing was read
         runs.Runs.ShouldBeEmpty();
@@ -397,7 +436,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         WriteText(Path.Combine("projects", ProjectFolder, "memory", "subagents", "agent-a2.jsonl"), Record("2026-10-31T12:00:00Z") + "\n");
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking that nothing was read or reported
         runs.Runs.ShouldBeEmpty();
@@ -414,7 +453,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         string transcript = WriteRun("a 1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
 
         // Reading the runs
-        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
         // Checking the result
         runs.Runs.ShouldBeEmpty();
@@ -435,11 +474,11 @@ public sealed class SubagentRunReaderTests : IDisposable
         // Writing a run and reading it once
         string transcript = WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
         SubagentRunReader reader = new SubagentRunReader(_fileReader);
-        reader.Read(_sinceUtc).Runs.Count.ShouldBe(1);
+        reader.Read(_sinceUtc, _nowUtc).Runs.Count.ShouldBe(1);
 
         // Locking the transcript, so that a second reading of the file would fail
         using FileStream locker = new FileStream(transcript, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
-        SubagentRuns runs = reader.Read(_sinceUtc);
+        SubagentRuns runs = reader.Read(_sinceUtc, _nowUtc);
 
         // Checking that the run comes from the cache
         runs.Runs.Count.ShouldBe(1);
@@ -455,13 +494,13 @@ public sealed class SubagentRunReaderTests : IDisposable
         // Writing a run and reading it once
         string transcript = WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
         SubagentRunReader reader = new SubagentRunReader(_fileReader);
-        reader.Read(_sinceUtc).Runs.Single().IsFinished.ShouldBeFalse();
+        reader.Read(_sinceUtc, _nowUtc).Runs.Single().IsFinished.ShouldBeFalse();
 
         // Adding a record to the transcript, then finishing the run in its description
         File.AppendAllText(transcript, Record("2026-10-31T12:30:00Z") + "\n");
-        AgentRun grown = reader.Read(_sinceUtc).Runs.Single();
+        AgentRun grown = reader.Read(_sinceUtc, _nowUtc).Runs.Single();
         WriteText(Path.Combine("projects", ProjectFolder, SessionId, "subagents", "agent-a1.meta.json"), "{\"agentType\":\"Explore\",\"finished\":true}");
-        AgentRun finished = reader.Read(_sinceUtc).Runs.Single();
+        AgentRun finished = reader.Read(_sinceUtc, _nowUtc).Runs.Single();
 
         // Checking that each change was read
         grown.LastRecordAtUtc.ShouldBe(new DateTimeOffset(2026, 10, 31, 12, 30, 0, TimeSpan.Zero));
@@ -477,11 +516,11 @@ public sealed class SubagentRunReaderTests : IDisposable
         // Writing a run and reading it once
         string transcript = WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
         SubagentRunReader reader = new SubagentRunReader(_fileReader);
-        reader.Read(_sinceUtc).Runs.Count.ShouldBe(1);
+        reader.Read(_sinceUtc, _nowUtc).Runs.Count.ShouldBe(1);
 
         // Deleting the transcript, then reading again
         File.Delete(transcript);
-        SubagentRuns runs = reader.Read(_sinceUtc);
+        SubagentRuns runs = reader.Read(_sinceUtc, _nowUtc);
 
         // Checking that the run is gone
         runs.Runs.ShouldBeEmpty();
@@ -514,7 +553,7 @@ public sealed class SubagentRunReaderTests : IDisposable
         try
         {
             // Reading the runs
-            SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc);
+            SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
 
             // Checking that the link is reported and not read
             runs.Runs.ShouldBeEmpty();
@@ -533,6 +572,157 @@ public sealed class SubagentRunReaderTests : IDisposable
     }
 
     /// <summary>
+    /// A reading that failed is not kept: once the file can be read again, the run appears
+    /// </summary>
+    [Fact]
+    public void FailedReadingIsNotKept()
+    {
+        // Skipping where the exclusive lock is not enforced
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "The exclusive lock of FileShare.None is reliable on Windows only");
+
+        // Writing a run and reading it while its transcript is locked
+        string transcript = WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
+        SubagentRunReader reader = new SubagentRunReader(_fileReader);
+        SubagentRuns locked;
+        using (FileStream locker = new FileStream(transcript, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            locked = reader.Read(_sinceUtc, _nowUtc);
+
+        // Reading again once the lock is gone
+        SubagentRuns unlocked = reader.Read(_sinceUtc, _nowUtc);
+
+        // Checking that the failure was reported, then that the run appeared
+        locked.Runs.ShouldBeEmpty();
+        locked.Problems.Count.ShouldBe(1);
+        locked.Problems[0].Reason.ShouldContain(nameof(FileReadFailure.Unreadable));
+        unlocked.Runs.Count.ShouldBe(1);
+        unlocked.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A run whose description alone has changed is read again
+    /// </summary>
+    [Fact]
+    public void RunWhoseDescriptionAloneChangedIsReadAgain()
+    {
+        // Writing a run and reading it once
+        WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"));
+        SubagentRunReader reader = new SubagentRunReader(_fileReader);
+        reader.Read(_sinceUtc, _nowUtc).Runs.Single().AgentTypeName.ShouldBe("Explore");
+
+        // Changing the description only, to a description of the same size
+        WriteText(Path.Combine("projects", ProjectFolder, SessionId, "subagents", "agent-a1.meta.json"), "{\"agentType\":\"Planner\"}");
+        AgentRun changed = reader.Read(_sinceUtc, _nowUtc).Runs.Single();
+
+        // Checking that the change was read
+        changed.AgentTypeName.ShouldBe("Planner");
+    }
+
+    /// <summary>
+    /// A projects folder or a project folder that is a link is reported and not followed
+    /// </summary>
+    /// <param name="level">Level of the link: the projects folder, or a project folder</param>
+    [Theory]
+    [InlineData("projects")]
+    [InlineData("project")]
+    public void LinkAboveTheRunsIsNotFollowed(string level)
+    {
+        // Writing a run outside the folder, and a link to it at the given level
+        string outside = Path.Combine(_workFolder, "outside");
+        string sessionPart = Path.Combine(SessionId, "subagents");
+        Directory.CreateDirectory(Path.Combine(outside, level == "projects" ? Path.Combine(ProjectFolder, sessionPart) : sessionPart));
+        string link = level == "projects" ? Path.Combine(_root, "projects") : Path.Combine(_root, "projects", ProjectFolder);
+        Directory.CreateDirectory(Path.GetDirectoryName(link)!);
+        CreateFolderLink(link, outside);
+        try
+        {
+            // Reading the runs
+            SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
+
+            // Checking that the link is reported and not followed
+            runs.Runs.ShouldBeEmpty();
+            runs.Problems.Count.ShouldBe(1);
+            runs.Problems[0].FilePath.ShouldBe(link);
+            runs.Problems[0].Reason.ShouldContain("not followed");
+        }
+        finally
+        {
+            RemoveFolderLink(link);
+        }
+    }
+
+    /// <summary>
+    /// A project folder named memory is never walked either
+    /// </summary>
+    [Fact]
+    public void ProjectFolderNamedMemoryIsNeverWalked()
+    {
+        // Writing a complete run under a project folder named memory
+        WriteText(Path.Combine("projects", "memory", SessionId, "subagents", "agent-a1.meta.json"), "{\"agentType\":\"Explore\"}");
+        WriteText(Path.Combine("projects", "memory", SessionId, "subagents", "agent-a1.jsonl"), Record("2026-10-31T12:00:00Z") + "\n");
+
+        // Reading the runs
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
+
+        // Checking that nothing was read or reported
+        runs.Runs.ShouldBeEmpty();
+        runs.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A session folder whose name is not plain is reported and not read
+    /// </summary>
+    [Fact]
+    public void SessionFolderWithAnOddNameIsReported()
+    {
+        // Writing a complete run under a session folder whose name holds a space
+        string folder = Path.Combine(_root, "projects", ProjectFolder, "odd name");
+        WriteText(Path.Combine("projects", ProjectFolder, "odd name", "subagents", "agent-a1.meta.json"), "{\"agentType\":\"Explore\"}");
+        WriteText(Path.Combine("projects", ProjectFolder, "odd name", "subagents", "agent-a1.jsonl"), Record("2026-10-31T12:00:00Z") + "\n");
+
+        // Reading the runs
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
+
+        // Checking that it is reported and not read
+        runs.Runs.ShouldBeEmpty();
+        runs.Problems.Count.ShouldBe(1);
+        runs.Problems[0].FilePath.ShouldBe(folder);
+        runs.Problems[0].Reason.ShouldContain("not read");
+    }
+
+    /// <summary>
+    /// A record dated more than five minutes after now is not read, and the run keeps its true times
+    /// </summary>
+    [Fact]
+    public void RecordInTheFutureIsNotRead()
+    {
+        // Writing a run with a record five minutes after now (accepted) and one in 2099 (refused)
+        WriteRun("a1", "{\"agentType\":\"Explore\"}", Record("2026-10-31T12:00:00Z"), Record("2026-11-01T00:05:00Z"), Record("2099-01-01T00:00:00Z"));
+
+        // Reading the runs
+        SubagentRuns runs = new SubagentRunReader(_fileReader).Read(_sinceUtc, _nowUtc);
+
+        // Checking the times and the problem
+        runs.Runs.Single().LastRecordAtUtc.ShouldBe(new DateTimeOffset(2026, 11, 1, 0, 5, 0, TimeSpan.Zero));
+        runs.Problems.Count.ShouldBe(1);
+        runs.Problems[0].Reason.ShouldContain("1 lines");
+    }
+
+    /// <summary>
+    /// Now must be in UTC
+    /// </summary>
+    [Fact]
+    public void NowMustBeInUtc()
+    {
+        // Reading with a now that has an offset
+        ArgumentOutOfRangeException exception = Should.Throw<ArgumentOutOfRangeException>(
+            () => new SubagentRunReader(_fileReader).Read(_sinceUtc, new DateTimeOffset(2026, 11, 1, 1, 0, 0, TimeSpan.FromHours(1))));
+
+        // Checking the exact type and the parameter in fault
+        exception.ShouldBeOfType<ArgumentOutOfRangeException>();
+        exception.ParamName.ShouldBe("nowUtc");
+    }
+
+    /// <summary>
     /// The reader writes nothing, even in a folder whose files are read-only
     /// </summary>
     [Fact]
@@ -547,7 +737,7 @@ public sealed class SubagentRunReaderTests : IDisposable
 
         // Reading several times
         for (int turn = 0; turn < 3; turn++)
-            reader.Read(_sinceUtc).Runs.Count.ShouldBe(1);
+            reader.Read(_sinceUtc, _nowUtc).Runs.Count.ShouldBe(1);
 
         // Checking that nothing changed
         Snapshot().ShouldBe(before);

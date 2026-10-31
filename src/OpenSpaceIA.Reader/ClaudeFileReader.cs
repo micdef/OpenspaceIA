@@ -463,8 +463,9 @@ internal sealed class ClaudeFileReader
     /// touching the disk, a file reached through a link is refused, and an allowed file is opened read-only with full sharing.
     /// Here the size limit applies to each line, not to the file: a longer line is skipped and counted. Each line is given
     /// to the action as soon as it is read, without its line feed and its carriage return, decoded as UTF-8 (a byte order mark
-    /// at the start of the file is removed, invalid bytes become the replacement character). The action must not throw an
-    /// exception of the disk: it would be reported as a failure of the file.</para>
+    /// at the start of the file is removed, invalid bytes become the replacement character). The limit counts every byte of
+    /// a line but its line feed, its carriage return included. An <see cref="IOException"/> thrown by the action is reported
+    /// as a failure of the file, as if the disk had failed; any other exception of the action goes out.</para>
     /// </remarks>
     /// <param name="fullPath">[Cannot be null] Full path of the file</param>
     /// <param name="onLine">[Cannot be null] Action given each line, in the order of the file</param>

@@ -778,6 +778,65 @@ public sealed class ClaudeFileReaderTests : IDisposable
     }
 
     /// <summary>
+    /// The lines are cut right at the edges of the blocks read (81 920 bytes): a line across two blocks, a carriage return at
+    /// the end of a block with its line feed in the next one, and a line feed at the end of a block
+    /// </summary>
+    [Fact]
+    public void LinesAreCutRightAtTheEdgesOfTheBlocks()
+    {
+        // Writing a line across two blocks, then a line whose carriage return ends the second block, then a line feed that ends
+        // the third block
+        const int BlockSize = 81920;
+        string acrossBlocks = new string('a', 100000);
+        string crAtEdge = new string('b', (2 * BlockSize) - 1 - (acrossBlocks.Length + 1));
+        string lfAtEdge = new string('c', (3 * BlockSize) - 1 - ((2 * BlockSize) + 1));
+        string fullPath = WriteText("projects/C--p/s.jsonl", acrossBlocks + "\n" + crAtEdge + "\r\n" + lfAtEdge + "\nend\n");
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking the result
+        result.IsSuccess.ShouldBeTrue();
+        lines.Select(line => line.Length).ShouldBe(new List<int>() { acrossBlocks.Length, crAtEdge.Length, lfAtEdge.Length, 3 });
+        lines[1].ShouldBe(crAtEdge);
+        lines[3].ShouldBe("end");
+    }
+
+    /// <summary>
+    /// A line longer than the limit across several blocks is skipped whole: no part of it leaks into the next line
+    /// </summary>
+    [Fact]
+    public void LineTooLongAcrossBlocksIsSkippedWhole()
+    {
+        // Writing a line of 200 000 bytes, then a short line, read with a limit of 100 000 bytes per line
+        string fullPath = WriteText("projects/C--p/s.jsonl", new string('x', 200000) + "\nshort\n");
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder, 100000), fullPath, out List<string> lines);
+
+        // Checking the result
+        lines.ShouldBe(new List<string>() { "short" });
+        result.TooLongLineCount.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// Only the byte order mark at the start of the file is removed: one at the start of another line is kept
+    /// </summary>
+    [Fact]
+    public void ByteOrderMarkOfAnotherLineIsKept()
+    {
+        // Writing a byte order mark at the start of the second line
+        byte[] mark = new UTF8Encoding(true).GetPreamble();
+        string fullPath = WriteFile("projects/C--p/s.jsonl", Encoding.UTF8.GetBytes("a\n").Concat(mark).Concat(Encoding.UTF8.GetBytes("b\n")).ToArray());
+
+        // Reading the lines
+        ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking that the mark of the second line is kept
+        lines.ShouldBe(new List<string>() { "a", "﻿b" });
+    }
+
+    /// <summary>
     /// Invalid bytes become the replacement character instead of failing
     /// </summary>
     [Fact]

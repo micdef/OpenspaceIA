@@ -25,10 +25,14 @@ namespace OpenSpaceIA.Reader;
 /// <para><b>Purpose:</b> a run needs only a few facts of its transcript (doc/analyse/spike-claude-files.md, § 3); the
 /// summary keeps them while the lines go by, so that the transcript is never held in memory.</para>
 /// <para><b>Behavior:</b> each line is one JSON record. The first and the last times are the earliest and the latest
-/// <c>timestamp</c> of the records, in UTC; a time must give its offset (or <c>Z</c>). The working folder is the first
-/// <c>cwd</c> that is a full path. The model is the last <c>message.model</c> of a record of the assistant, and the last tool
-/// is the name of the last <c>tool_use</c> of a record of the assistant. A line that is not a JSON object, or whose time or
-/// texts cannot be read, is counted and gives no fact at all; a blank line is left out. A line is never kept.</para>
+/// <c>timestamp</c> of the records, in UTC; a time must be a full ISO 8601 date and time with its offset (or <c>Z</c>), and
+/// not later than the latest time accepted (a time in the future is not true). The working folder is the first <c>cwd</c>
+/// that is a full path for the system that reads it (Claude Code writes the folders of its own machine). The model is the
+/// last <c>message.model</c> of a record of the assistant, except the placeholder <c>&lt;synthetic&gt;</c> of the messages
+/// that Claude Code makes itself; the last tool is the name of the last item <c>tool_use</c> of a record of the assistant.
+/// Each fact of a line is read on its own: a fact that cannot be read is lost and the line is counted, but the other facts
+/// of the line are kept, so that a bad time never hides the hand back of a run. A line that is not a JSON object is counted
+/// and gives no fact; a blank line is left out. A line is never kept.</para>
 /// </remarks>
 internal sealed class TranscriptSummary
 {
@@ -36,13 +40,28 @@ internal sealed class TranscriptSummary
 
     #region Constants
 
-    // #N/A
+    /// <summary>
+    /// Model that Claude Code writes on the messages it makes itself, which is not a model
+    /// </summary>
+    private const string SyntheticModel = "<synthetic>";
 
     #endregion
 
     #region Variables
 
-    // #N/A
+    /// <summary>
+    /// Formats of a time accepted: a full date and time, with fractions of a second or not, then <c>Z</c> or an offset
+    /// </summary>
+    private static readonly string[] _timeFormats = new string[]
+    {
+        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF'Z'",
+        "yyyy-MM-dd'T'HH:mm:ss.FFFFFFFzzz",
+    };
+
+    /// <summary>
+    /// Latest time accepted, in UTC
+    /// </summary>
+    private readonly DateTimeOffset _latestAcceptedUtc;
 
     #endregion
 
@@ -96,7 +115,7 @@ internal sealed class TranscriptSummary
     public string? LastToolName { get; private set; }
 
     /// <summary>
-    /// Number of lines that could not be read
+    /// Number of lines that could not be read, or one of whose facts could not be read
     /// </summary>
     public int UnreadableLineCount { get; private set; }
 
@@ -112,7 +131,20 @@ internal sealed class TranscriptSummary
 
     #region Constructors
 
-    // #N/A
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <param name="latestAcceptedUtc">Latest time accepted for a record (now, with a small margin); its offset must be zero</param>
+    /// <exception cref="ArgumentOutOfRangeException">If the latest time accepted is not in UTC</exception>
+    public TranscriptSummary(DateTimeOffset latestAcceptedUtc)
+    {
+        // Check
+        if (latestAcceptedUtc.Offset != TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(latestAcceptedUtc), latestAcceptedUtc, $"The value of the parameter: {nameof(latestAcceptedUtc)} must be in UTC");
+
+        // Setting the value
+        _latestAcceptedUtc = latestAcceptedUtc;
+    }
 
     #endregion
 
@@ -127,58 +159,82 @@ internal sealed class TranscriptSummary
     #region Privates
 
     /// <summary>
-    /// Method used to read the time of a record, which must give its offset
+    /// Method used to read the time of a record
     /// </summary>
-    /// <param name="value">Value of the key <c>timestamp</c></param>
-    /// <param name="time">The time, in UTC</param>
-    /// <returns>
-    /// True  ==> The value is a text of a time with its offset<br/>
-    /// False ==> The value is of another kind, or is a time without offset (it would depend on the time zone of the machine)
-    /// </returns>
-    /// <exception cref="InvalidOperationException">If the text holds an escaped half of a character (caught by the caller)</exception>
-    private static bool TryReadTime(JsonElement value, out DateTimeOffset time)
+    /// <param name="record">Record of the transcript</param>
+    /// <param name="isRead">False when the record gives a time that cannot be read</param>
+    /// <returns>[Can be null] The time, in UTC; null when the record gives none, or gives one that cannot be read</returns>
+    private DateTimeOffset? ReadTime(JsonElement record, out bool isRead)
     {
-        // Refusing a value that is not a text, or a time without offset
-        time = default;
-        if (value.ValueKind != JsonValueKind.String)
+        // Leaving out a record without time
+        isRead = true;
+        if (!record.TryGetProperty("timestamp", out JsonElement value))
         {
             // Function's return
-            return false;
-        }
-        string text = value.GetString()!;
-        if (!DateTime.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out DateTime parsed) || parsed.Kind == DateTimeKind.Unspecified
-            || !DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTimeOffset withOffset))
-        {
-            // Function's return
-            return false;
+            return null;
         }
 
-        // Turning the time into UTC
-        time = withOffset.ToUniversalTime();
+        // Reading a full ISO time with its offset, not later than the latest time accepted
+        string? text = value.ValueKind == JsonValueKind.String ? ReadString(value) : null;
+        if (text is null
+            || !DateTimeOffset.TryParseExact(text, _timeFormats, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTimeOffset time)
+            || time > _latestAcceptedUtc)
+        {
+            isRead = false;
+
+            // Function's return
+            return null;
+        }
 
         // Function's return
-        return true;
+        return time.ToUniversalTime();
+    }
+
+    /// <summary>
+    /// Method used to read a JSON text, which fails when it holds an escaped half of a character
+    /// </summary>
+    /// <param name="value">JSON text</param>
+    /// <returns>[Can be null] The text; null when it holds an escaped half of a character</returns>
+    private static string? ReadString(JsonElement value)
+    {
+        try
+        {
+            // Function's return
+            return value.GetString();
+        }
+        catch (InvalidOperationException)
+        {
+            // Function's return: an escaped half of a character is not a text
+            return null;
+        }
     }
 
     /// <summary>
     /// Method used to read the name of the last tool called in the content of a message
     /// </summary>
     /// <param name="message">Message of a record of the assistant</param>
+    /// <param name="isRead">False when a name of tool cannot be read</param>
     /// <returns>[Can be null] The name of the last tool called; null when the message calls none</returns>
-    /// <exception cref="InvalidOperationException">If a name holds an escaped half of a character (caught by the caller)</exception>
-    private static string? ReadLastToolName(JsonElement message)
+    private static string? ReadLastToolName(JsonElement message, out bool isRead)
     {
         // Looking at each item of the content
+        isRead = true;
         string? toolName = null;
         if (message.TryGetProperty("content", out JsonElement content) && content.ValueKind == JsonValueKind.Array)
         {
             foreach (JsonElement item in content.EnumerateArray())
             {
-                if (item.ValueKind == JsonValueKind.Object && item.TryGetProperty("type", out JsonElement type) && type.ValueKind == JsonValueKind.String
-                    && type.ValueEquals("tool_use") && item.TryGetProperty("name", out JsonElement name) && name.ValueKind == JsonValueKind.String)
+                if (item.ValueKind != JsonValueKind.Object || !item.TryGetProperty("type", out JsonElement type) || type.ValueKind != JsonValueKind.String
+                    || ReadString(type) != "tool_use" || !item.TryGetProperty("name", out JsonElement name) || name.ValueKind != JsonValueKind.String)
                 {
-                    toolName = name.GetString();
+                    continue;
                 }
+
+                string? readName = ReadString(name);
+                if (readName is null)
+                    isRead = false;
+                else
+                    toolName = readName;
             }
         }
 
@@ -205,10 +261,20 @@ internal sealed class TranscriptSummary
         if (string.IsNullOrWhiteSpace(line))
             return;
 
+        // Reading the line as one JSON object
+        JsonDocument document;
         try
         {
-            // Reading the line as one JSON object
-            using JsonDocument document = JsonDocument.Parse(line);
+            document = JsonDocument.Parse(line);
+        }
+        catch (JsonException)
+        {
+            UnreadableLineCount++;
+            return;
+        }
+
+        using (document)
+        {
             JsonElement record = document.RootElement;
             if (record.ValueKind != JsonValueKind.Object)
             {
@@ -216,48 +282,46 @@ internal sealed class TranscriptSummary
                 return;
             }
 
-            // Reading every fact of the record first, so that a line that fails gives no fact at all
-            DateTimeOffset? time = null;
-            if (record.TryGetProperty("timestamp", out JsonElement timestamp))
-            {
-                if (!TryReadTime(timestamp, out DateTimeOffset readTime))
-                {
-                    UnreadableLineCount++;
-                    return;
-                }
-                time = readTime;
-            }
-            string? workingFolder = record.TryGetProperty("cwd", out JsonElement cwd) && cwd.ValueKind == JsonValueKind.String ? cwd.GetString() : null;
-            string? model = null;
-            string? toolName = null;
-            if (record.TryGetProperty("type", out JsonElement type) && type.ValueKind == JsonValueKind.String && type.ValueEquals("assistant")
-                && record.TryGetProperty("message", out JsonElement message) && message.ValueKind == JsonValueKind.Object)
-            {
-                model = message.TryGetProperty("model", out JsonElement modelValue) && modelValue.ValueKind == JsonValueKind.String ? modelValue.GetString() : null;
-                toolName = ReadLastToolName(message);
-            }
-
-            // Keeping the facts of the record
+            // Reading each fact on its own, so that a fact that cannot be read never hides the others
+            bool isLineRead = true;
+            DateTimeOffset? time = ReadTime(record, out bool isTimeRead);
+            isLineRead &= isTimeRead;
             if (time is not null)
             {
                 FirstRecordAtUtc = FirstRecordAtUtc is null || time < FirstRecordAtUtc ? time : FirstRecordAtUtc;
                 LastRecordAtUtc = LastRecordAtUtc is null || time > LastRecordAtUtc ? time : LastRecordAtUtc;
             }
-            if (WorkingFolder is null && !string.IsNullOrWhiteSpace(workingFolder) && Path.IsPathFullyQualified(workingFolder))
-                WorkingFolder = workingFolder;
-            if (!string.IsNullOrWhiteSpace(model))
-                Model = model;
-            if (toolName is not null)
-                LastToolName = toolName;
-        }
-        catch (JsonException)
-        {
-            UnreadableLineCount++;
-        }
-        catch (InvalidOperationException)
-        {
-            // A text with an escaped half of a character
-            UnreadableLineCount++;
+
+            // Keeping the first working folder that is a full path
+            if (record.TryGetProperty("cwd", out JsonElement cwd) && cwd.ValueKind == JsonValueKind.String)
+            {
+                string? workingFolder = ReadString(cwd);
+                isLineRead &= workingFolder is not null;
+                if (WorkingFolder is null && !string.IsNullOrWhiteSpace(workingFolder) && Path.IsPathFullyQualified(workingFolder))
+                    WorkingFolder = workingFolder;
+            }
+
+            // Keeping the model and the last tool of a record of the assistant
+            if (record.TryGetProperty("type", out JsonElement type) && type.ValueKind == JsonValueKind.String && ReadString(type) == "assistant"
+                && record.TryGetProperty("message", out JsonElement message) && message.ValueKind == JsonValueKind.Object)
+            {
+                if (message.TryGetProperty("model", out JsonElement modelValue) && modelValue.ValueKind == JsonValueKind.String)
+                {
+                    string? model = ReadString(modelValue);
+                    isLineRead &= model is not null;
+                    if (!string.IsNullOrWhiteSpace(model) && model != SyntheticModel)
+                        Model = model;
+                }
+
+                string? toolName = ReadLastToolName(message, out bool isToolRead);
+                isLineRead &= isToolRead;
+                if (toolName is not null)
+                    LastToolName = toolName;
+            }
+
+            // Counting a line one of whose facts could not be read
+            if (!isLineRead)
+                UnreadableLineCount++;
         }
     }
 

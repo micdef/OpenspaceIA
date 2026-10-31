@@ -133,8 +133,8 @@ public sealed class TranscriptSummaryTests
     /// <returns>The summary</returns>
     private static TranscriptSummary Summarize(params string[] lines)
     {
-        // Adding each line
-        TranscriptSummary summary = new TranscriptSummary();
+        // Adding each line, with no limit in the future
+        TranscriptSummary summary = new TranscriptSummary(DateTimeOffset.MaxValue);
         foreach (string line in lines)
             summary.Add(line);
 
@@ -272,10 +272,111 @@ public sealed class TranscriptSummaryTests
     public void LineCannotBeNull()
     {
         // Adding a null line
-        ArgumentNullException exception = Should.Throw<ArgumentNullException>(() => new TranscriptSummary().Add(null!));
+        ArgumentNullException exception = Should.Throw<ArgumentNullException>(() => new TranscriptSummary(DateTimeOffset.MaxValue).Add(null!));
 
         // Checking the parameter in fault
         exception.ParamName.ShouldBe("line");
+    }
+
+    /// <summary>
+    /// The latest time accepted must be in UTC
+    /// </summary>
+    [Fact]
+    public void LatestTimeAcceptedMustBeInUtc()
+    {
+        // Building a summary with an offset
+        ArgumentOutOfRangeException exception = Should.Throw<ArgumentOutOfRangeException>(
+            () => new TranscriptSummary(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.FromHours(1))));
+
+        // Checking the exact type and the parameter in fault
+        exception.ShouldBeOfType<ArgumentOutOfRangeException>();
+        exception.ParamName.ShouldBe("latestAcceptedUtc");
+    }
+
+    /// <summary>
+    /// A time later than the latest time accepted is not true: it is counted and gives no time
+    /// </summary>
+    [Fact]
+    public void TimeInTheFutureIsNotRead()
+    {
+        // Summarizing a record at the latest time accepted and one just after it
+        TranscriptSummary summary = new TranscriptSummary(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
+        summary.Add(User("2026-10-31T12:00:00.000Z"));
+        summary.Add(User("2026-10-31T12:00:00.001Z"));
+        summary.Add(User("2099-01-01T00:00:00.000Z"));
+
+        // Checking the times and the count
+        summary.LastRecordAtUtc.ShouldBe(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
+        summary.UnreadableLineCount.ShouldBe(2);
+    }
+
+    /// <summary>
+    /// A time that is not a full ISO date and time (a time alone, a date alone, a loose text) is not read
+    /// </summary>
+    /// <param name="timestamp">Time that must be refused</param>
+    [Theory]
+    [InlineData("23:59:59Z")]
+    [InlineData("2026-10-31Z")]
+    [InlineData("31/10/2026 12:00:00 +00:00")]
+    [InlineData("2026-10-31 12:00:00Z")]
+    [InlineData("Sat, 31 Oct 2026 12:00:00 GMT")]
+    public void TimeThatIsNotAFullIsoDateIsNotRead(string timestamp)
+    {
+        // Summarizing the record
+        TranscriptSummary summary = Summarize($"{{\"type\":\"user\",\"timestamp\":\"{timestamp}\"}}");
+
+        // Checking that no time was read and that the line is counted
+        summary.FirstRecordAtUtc.ShouldBeNull();
+        summary.UnreadableLineCount.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// A fact that cannot be read never hides the others: the hand back of a line whose time is bad is kept
+    /// </summary>
+    [Fact]
+    public void BadTimeDoesNotHideTheHandBack()
+    {
+        // Summarizing a hand back whose time has no offset
+        TranscriptSummary summary = Summarize(
+            Assistant("2026-10-31T12:00:00.000Z", "claude-sonnet-5-5", "Read"),
+            Assistant("2026-10-31T12:05:00", "claude-sonnet-5-5", "SubagentHandback"));
+
+        // Checking that the hand back is kept and that the line is counted
+        summary.LastToolName.ShouldBe("SubagentHandback");
+        summary.LastRecordAtUtc.ShouldBe(new DateTimeOffset(2026, 10, 31, 12, 0, 0, TimeSpan.Zero));
+        summary.UnreadableLineCount.ShouldBe(1);
+    }
+
+    /// <summary>
+    /// The placeholder model of the messages that Claude Code makes itself is not a model
+    /// </summary>
+    [Fact]
+    public void SyntheticModelIsLeftOut()
+    {
+        // Summarizing a real model, then the placeholder
+        TranscriptSummary summary = Summarize(
+            Assistant("2026-10-31T12:00:00.000Z", "claude-opus-5-5", null),
+            Assistant("2026-10-31T12:01:00.000Z", "<synthetic>", null));
+
+        // Checking the model
+        summary.Model.ShouldBe("claude-opus-5-5");
+        summary.UnreadableLineCount.ShouldBe(0);
+    }
+
+    /// <summary>
+    /// The model and the tools are read only from a record of the assistant, and a tool only from an item tool_use
+    /// </summary>
+    [Fact]
+    public void ModelAndToolComeFromTheAssistantOnly()
+    {
+        // Summarizing a record of the user with a model and a tool, and an item of another kind with a name
+        TranscriptSummary summary = Summarize(
+            "{\"type\":\"user\",\"timestamp\":\"2026-10-31T12:00:00Z\",\"message\":{\"model\":\"claude-haiku-5-5\",\"content\":[{\"type\":\"tool_use\",\"name\":\"Read\"}]}}",
+            "{\"type\":\"assistant\",\"timestamp\":\"2026-10-31T12:01:00Z\",\"message\":{\"content\":[{\"type\":\"tool_result\",\"name\":\"Write\"}]}}");
+
+        // Checking that nothing was taken
+        summary.Model.ShouldBeNull();
+        summary.LastToolName.ShouldBeNull();
     }
 
     #endregion

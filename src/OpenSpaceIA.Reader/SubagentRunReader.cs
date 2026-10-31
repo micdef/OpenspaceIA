@@ -26,7 +26,8 @@ namespace OpenSpaceIA.Reader;
 /// (doc/analyse/state-definitions.md, § 2 and § 5; doc/analyse/claude-model-decisions.md, decision 4).</para>
 /// <para><b>Behavior:</b> walks <c>projects/&lt;project&gt;/&lt;session&gt;/subagents/</c>, each folder in the ordinal order
 /// of its names; a <c>memory</c> folder (in any case) is never walked, a session folder whose name is not made of letters,
-/// digits, hyphens and underscores is left out, and a folder that is a link is reported and not followed. Each transcript
+/// digits, hyphens and underscores is reported and not read, and a folder that is a link is reported and not followed. A
+/// record of a transcript dated more than five minutes after now is not true, and is not read. Each transcript
 /// <c>agent-&lt;id&gt;.jsonl</c> written since the start of the window is a run: its description
 /// <c>agent-&lt;id&gt;.meta.json</c> gives its agent type (without it, the run is left out and reported), and its transcript,
 /// read line by line, gives its times, its project, its real model and its last tool. A run is finished when its
@@ -76,6 +77,11 @@ internal sealed class SubagentRunReader
     /// Name of the tool that ends a run
     /// </summary>
     private const string HandBackToolName = "SubagentHandback";
+
+    /// <summary>
+    /// Margin added to now for the latest time accepted in a transcript, so that a small gap between the clocks is not refused
+    /// </summary>
+    private static readonly TimeSpan _clockMargin = TimeSpan.FromMinutes(5);
 
     #endregion
 
@@ -205,10 +211,11 @@ internal sealed class SubagentRunReader
     /// <param name="sessionId">[Cannot be null] Identifier of the main session</param>
     /// <param name="transcriptPath">[Cannot be null] Full path of the transcript</param>
     /// <param name="metaPath">[Can be null] Full path of the description; null when it does not exist</param>
+    /// <param name="latestAcceptedUtc">Latest time accepted for a record of the transcript</param>
     /// <param name="problems">[Cannot be null] Problems met while the run is read</param>
     /// <param name="isFinal">False when a reading failed, so that the result must not be kept</param>
     /// <returns>[Can be null] The run; null when it is left out</returns>
-    private AgentRun? ReadRun(string runId, string sessionId, string transcriptPath, string? metaPath, List<ReadProblem> problems, out bool isFinal)
+    private AgentRun? ReadRun(string runId, string sessionId, string transcriptPath, string? metaPath, DateTimeOffset latestAcceptedUtc, List<ReadProblem> problems, out bool isFinal)
     {
         // Leaving out a run without description, which cannot be placed at a desk
         isFinal = true;
@@ -238,7 +245,7 @@ internal sealed class SubagentRunReader
         }
 
         // Summarizing the transcript, line by line
-        TranscriptSummary summary = new TranscriptSummary();
+        TranscriptSummary summary = new TranscriptSummary(latestAcceptedUtc);
         LineReadResult linesResult = _fileReader.ReadLines(transcriptPath, summary.Add);
         if (!linesResult.IsSuccess)
         {
@@ -251,7 +258,7 @@ internal sealed class SubagentRunReader
         if (summary.UnreadableLineCount > 0 || linesResult.TooLongLineCount > 0)
         {
             problems.Add(new ReadProblem(transcriptPath, string.Create(CultureInfo.InvariantCulture,
-                $"{summary.UnreadableLineCount + linesResult.TooLongLineCount} lines of the transcript cannot be read ({linesResult.TooLongLineCount} longer than the limit): they are left out")));
+                $"{summary.UnreadableLineCount + linesResult.TooLongLineCount} lines of the transcript cannot be read, in whole or in part ({linesResult.TooLongLineCount} longer than the limit): what they give is left out")));
         }
 
         // Leaving out a run whose transcript gives no time or no project
@@ -280,10 +287,11 @@ internal sealed class SubagentRunReader
     /// </summary>
     /// <param name="sessionFolder">[Cannot be null] Full path of the folder of the session</param>
     /// <param name="sinceUtc">Start of the window: older transcripts are not read</param>
+    /// <param name="latestAcceptedUtc">Latest time accepted for a record of a transcript</param>
     /// <param name="runs">[Cannot be null] Runs read, where the new ones are added</param>
     /// <param name="problems">[Cannot be null] Problems, where every run left out is added</param>
     /// <param name="seen">[Cannot be null] Full paths of the transcripts seen, so that the others are removed from the cache</param>
-    private void ReadSession(string sessionFolder, DateTimeOffset sinceUtc, List<AgentRun> runs, List<ReadProblem> problems, HashSet<string> seen)
+    private void ReadSession(string sessionFolder, DateTimeOffset sinceUtc, DateTimeOffset latestAcceptedUtc, List<AgentRun> runs, List<ReadProblem> problems, HashSet<string> seen)
     {
         // Refusing a subagents folder that is a link
         string subagentsFolder = Path.Join(sessionFolder, SubagentsFolderName);
@@ -325,7 +333,7 @@ internal sealed class SubagentRunReader
             if (!_cache.TryGetValue(transcriptPath, out CachedRun? cached) || !cached.IsSameAs(transcript.Length, transcript.LastWriteTimeUtc, metaLength, metaWriteUtc))
             {
                 List<ReadProblem> runProblems = new List<ReadProblem>();
-                AgentRun? run = ReadRun(runId, sessionId, transcriptPath, meta is null ? null : Path.Join(subagentsFolder, meta.Name), runProblems, out bool isFinal);
+                AgentRun? run = ReadRun(runId, sessionId, transcriptPath, meta is null ? null : Path.Join(subagentsFolder, meta.Name), latestAcceptedUtc, runProblems, out bool isFinal);
                 cached = new CachedRun(transcript.Length, transcript.LastWriteTimeUtc, metaLength, metaWriteUtc, run, runProblems);
                 if (isFinal)
                     _cache[transcriptPath] = cached;
@@ -348,10 +356,17 @@ internal sealed class SubagentRunReader
     /// Method used to read the runs whose transcript was written since the start of a window
     /// </summary>
     /// <param name="sinceUtc">Start of the window: a run whose transcript was last written before it is not read</param>
+    /// <param name="nowUtc">Now, in UTC: a record more than five minutes later is not true, and is not read</param>
     /// <returns>The runs read, and the problems met</returns>
-    public SubagentRuns Read(DateTimeOffset sinceUtc)
+    /// <exception cref="ArgumentOutOfRangeException">If now is not in UTC</exception>
+    public SubagentRuns Read(DateTimeOffset sinceUtc, DateTimeOffset nowUtc)
     {
+        // Check
+        if (nowUtc.Offset != TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(nowUtc), nowUtc, $"The value of the parameter: {nameof(nowUtc)} must be in UTC");
+
         // Refusing a projects folder that is a link
+        DateTimeOffset latestAcceptedUtc = nowUtc + _clockMargin;
         List<AgentRun> runs = new List<AgentRun>();
         List<ReadProblem> problems = new List<ReadProblem>();
         HashSet<string> seen = new HashSet<string>(StringComparer.Ordinal);
@@ -371,8 +386,13 @@ internal sealed class SubagentRunReader
                 foreach (string sessionFolder in ListPlainFolders(projectFolder, problems))
                 {
                     string name = Path.GetFileName(sessionFolder);
-                    if (!string.Equals(name, MemoryFolderName, StringComparison.OrdinalIgnoreCase) && IsPlainName(name))
-                        ReadSession(sessionFolder, sinceUtc, runs, problems, seen);
+                    if (string.Equals(name, MemoryFolderName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    if (IsPlainName(name))
+                        ReadSession(sessionFolder, sinceUtc, latestAcceptedUtc, runs, problems, seen);
+                    else
+                        problems.Add(new ReadProblem(sessionFolder, "The name of the folder of a session is not made of letters, digits, hyphens and underscores: it is not read"));
                 }
             }
         }
