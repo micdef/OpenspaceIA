@@ -620,8 +620,9 @@ public sealed class SubagentRunReaderTests : IDisposable
     /// A run whose description alone has changed, with the same size and a new last write, is read again
     /// </summary>
     /// <remarks>
-    /// The new last write is set by the test: two writes a few milliseconds apart can get the same last write (see
-    /// <see cref="RewriteWithTheSameSizeAndTheSameLastWriteIsNotSeen"/>), which made this test fail on the CI on 2026-10-31.
+    /// The new last write is set by the test: two writes in a row can get the same last write, and the change is then not
+    /// seen (see <see cref="RewriteWithTheSameSizeAndTheSameLastWriteIsNotSeen"/>); this made the test fail on the CI on
+    /// 2026-10-31, when it relied on the clock.
     /// </remarks>
     [Fact]
     public void RunWhoseDescriptionAloneChangedIsReadAgain()
