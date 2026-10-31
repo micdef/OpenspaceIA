@@ -6,7 +6,6 @@
  */
 
 // Using
-using System.Collections.ObjectModel;
 using OpenSpaceIA.Core.Model;
 
 // Static using
@@ -100,8 +99,8 @@ internal sealed record AgentDefinitions
     public AgentDefinitions(IReadOnlyList<AgentType> agentTypes, IReadOnlyList<ReadProblem> problems)
     {
         // Copying the lists
-        AgentTypes = CopyWithoutNull(agentTypes, nameof(agentTypes));
-        Problems = CopyWithoutNull(problems, nameof(problems));
+        AgentTypes = ReadOnlyLists.CopyWithoutNull(agentTypes, nameof(agentTypes));
+        Problems = ReadOnlyLists.CopyWithoutNull(problems, nameof(problems));
     }
 
     #endregion
@@ -116,35 +115,7 @@ internal sealed record AgentDefinitions
 
     #region Privates
 
-    /// <summary>
-    /// Method used to copy a list into a read-only list, refusing a null element
-    /// </summary>
-    /// <typeparam name="T">Type of the elements</typeparam>
-    /// <param name="items">[Can be null] List to copy</param>
-    /// <param name="paramName">[Cannot be null] Name of the parameter, for the exceptions</param>
-    /// <returns>A read-only copy of the list</returns>
-    /// <exception cref="ArgumentNullException">If the list is null</exception>
-    /// <exception cref="ArgumentException">If the list holds a null element</exception>
-    private static ReadOnlyCollection<T> CopyWithoutNull<T>(IReadOnlyList<T>? items, string paramName)
-        where T : class
-    {
-        // Check
-        if (items is null)
-            throw new ArgumentNullException(paramName, $"The value of the parameter: {paramName} cannot be null");
-
-        // Copying the elements, refusing a null one
-        List<T> copy = new List<T>(items.Count);
-        foreach (T? item in items)
-        {
-            if (item is null)
-                throw new ArgumentException($"The list of the parameter: {paramName} cannot contain a null element", paramName);
-
-            copy.Add(item);
-        }
-
-        // Function's return
-        return new ReadOnlyCollection<T>(copy);
-    }
+    // #N/A
 
     #endregion
 

@@ -136,56 +136,6 @@ internal sealed class AgentDefinitionReader
     #region Privates
 
     /// <summary>
-    /// Method used to list the entries of a folder of definitions, in the ordinal order of their names
-    /// </summary>
-    /// <param name="folder">[Cannot be null] Full path of the agents folder or of one of its subfolders</param>
-    /// <param name="problems">[Cannot be null] Problems, where a folder that cannot be listed is added</param>
-    /// <returns>The files and the folders; empty when the folder is missing or cannot be listed</returns>
-    private static List<FileSystemInfo> ListEntries(string folder, List<ReadProblem> problems)
-    {
-        // Reporting an entry that exists but is not a folder (a file; on Linux, a link to a missing target)
-        if (!Directory.Exists(folder))
-        {
-            if (Exists(folder))
-                problems.Add(new ReadProblem(folder, "The entry cannot be listed: it is not a folder (a file, or a link to a missing target), so no definition is read in it"));
-
-            // Function's return
-            return new List<FileSystemInfo>();
-        }
-
-        try
-        {
-            // Listing the entries, and sorting them so that the result does not depend on the system
-            List<FileSystemInfo> entries = new DirectoryInfo(folder).EnumerateFileSystemInfos().ToList();
-            entries.Sort((first, second) => string.CompareOrdinal(first.Name, second.Name));
-
-            // Function's return
-            return entries;
-        }
-        catch (DirectoryNotFoundException exception)
-        {
-            problems.Add(new ReadProblem(folder, $"The folder cannot be listed (a link to a missing target, or a folder removed meanwhile): {Describe(exception)}"));
-
-            // Function's return
-            return new List<FileSystemInfo>();
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            problems.Add(new ReadProblem(folder, $"The folder cannot be listed: {Describe(exception)}"));
-
-            // Function's return
-            return new List<FileSystemInfo>();
-        }
-        catch (IOException exception)
-        {
-            problems.Add(new ReadProblem(folder, $"The folder cannot be listed: {Describe(exception)}"));
-
-            // Function's return
-            return new List<FileSystemInfo>();
-        }
-    }
-
-    /// <summary>
     /// Method used to read the definitions of a folder, and of its subfolders at the place of their names
     /// </summary>
     /// <remarks>
@@ -203,7 +153,7 @@ internal sealed class AgentDefinitionReader
     /// <param name="problems">[Cannot be null] Problems, where every file or folder left out is added</param>
     private void ReadFolder(string folder, int depth, List<AgentType> agentTypes, Dictionary<string, string> filesByName, List<ReadProblem> problems)
     {
-        foreach (FileSystemInfo entry in ListEntries(folder, problems))
+        foreach (FileSystemInfo entry in FolderListing.ListEntries(folder, problems))
         {
             // Reporting an entry whose attributes the system cannot give (a path longer than the system accepts)
             string entryPath = Path.Join(folder, entry.Name);
@@ -214,7 +164,7 @@ internal sealed class AgentDefinitionReader
             }
 
             // Reporting a link to a folder, which is not followed: it could lead out of the folder of Claude Code, or into a loop
-            if (entry is DirectoryInfo && IsLink(entry.Attributes))
+            if (entry is DirectoryInfo && FolderListing.IsLink(entry.Attributes))
             {
                 problems.Add(new ReadProblem(entryPath, "The subfolder is a junction, a symbolic link or another reparse point: it is not followed, so the definitions it leads to are not read"));
                 continue;
@@ -263,71 +213,6 @@ internal sealed class AgentDefinitionReader
         }
     }
 
-    /// <summary>
-    /// Method used to know whether attributes are those of a link
-    /// </summary>
-    /// <param name="attributes">Attributes of an entry</param>
-    /// <returns>
-    /// True  ==> The entry is a junction, a symbolic link or another reparse point<br/>
-    /// False ==> The entry is a plain file or folder
-    /// </returns>
-    private static bool IsLink(FileAttributes attributes)
-    {
-        // Function's return
-        return (attributes & FileAttributes.ReparsePoint) != 0;
-    }
-
-    /// <summary>
-    /// Method used to know whether something exists at a path, whatever it is, without following a link
-    /// </summary>
-    /// <param name="path">[Cannot be null] Full path</param>
-    /// <returns>
-    /// True  ==> A file, a folder or a link (even to a missing target) exists at the path, or the system refuses to say<br/>
-    /// False ==> Nothing exists at the path
-    /// </returns>
-    private static bool Exists(string path)
-    {
-        try
-        {
-            // Reading the attributes of the entry itself
-            File.GetAttributes(path);
-
-            // Function's return
-            return true;
-        }
-        catch (FileNotFoundException)
-        {
-            // Function's return
-            return false;
-        }
-        catch (DirectoryNotFoundException)
-        {
-            // Function's return
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            // Function's return: the system refuses to say, so the entry is reported rather than taken as missing
-            return true;
-        }
-        catch (IOException)
-        {
-            // Function's return: the system cannot say, so the entry is reported rather than taken as missing
-            return true;
-        }
-    }
-
-    /// <summary>
-    /// Method used to describe an exception of the system for a problem
-    /// </summary>
-    /// <param name="exception">[Cannot be null] Exception raised while the folder was listed</param>
-    /// <returns>The type of the exception, its code and its message</returns>
-    private static string Describe(Exception exception)
-    {
-        // Function's return
-        return $"{exception.GetType().Name} (0x{exception.HResult:X8}): {exception.Message}";
-    }
-
     #endregion
 
     #region Publics
@@ -345,7 +230,7 @@ internal sealed class AgentDefinitionReader
         string agentsFolder = Path.Combine(_fileReader.Folder.RootPath, AgentsFolderName);
 
         // Refusing an agents folder that is a link: walking it would follow the tree it leads to, perhaps the whole disk
-        if (Directory.Exists(agentsFolder) && IsLink(new DirectoryInfo(agentsFolder).Attributes))
+        if (FolderListing.IsLinkedFolder(agentsFolder))
             problems.Add(new ReadProblem(agentsFolder, "The agents folder is a junction, a symbolic link or another reparse point: it is not followed, so no definition is read"));
         else
             ReadFolder(agentsFolder, 0, agentTypes, filesByName, problems);
