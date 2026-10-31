@@ -1,0 +1,4 @@
+### Added
+
+- Reader project (`src/OpenSpaceIA.Reader`), the adapter that reads the files of Claude Code, read only, and depends on the Core only. Its base: the folder of Claude Code (`~/.claude` by default, any other folder can be given), an allow-list of the only files it may open (`sessions/*.json`, the `.jsonl` transcripts of `projects/` outside `memory/`, `agents/*.md`; NTFS streams, junctions and symbolic links below the folder are refused, so that no trick of the file system reopens a forbidden folder), and a safe reading of a small text file: opened read-only with full sharing so that Claude Code is never disturbed, limited in size, and a missing, locked, refused or forbidden file gives an explicit failure instead of an exception.
+- Tests of the Reader (`test/OpenSpaceIA.Reader.Tests`), written first, on invented files in a temporary folder; architecture rules of the Reader (it depends on the Core only).

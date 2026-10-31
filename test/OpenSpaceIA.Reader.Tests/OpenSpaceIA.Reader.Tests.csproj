@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Tests of the Reader: the reading of the files of Claude Code, written first (packages and settings in test/Directory.Build.props) -->
+
+  <!-- Projects -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\OpenSpaceIA.Reader\OpenSpaceIA.Reader.csproj" />
+  </ItemGroup>
+
+</Project>

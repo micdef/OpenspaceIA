@@ -38,12 +38,14 @@
   <Folder Name="/src/">
     <File Path="src/README.md" />
     <Project Path="src/OpenSpaceIA.Core/OpenSpaceIA.Core.csproj" />
+    <Project Path="src/OpenSpaceIA.Reader/OpenSpaceIA.Reader.csproj" />
   </Folder>
   <Folder Name="/test/">
     <File Path="test/Directory.Build.props" />
     <File Path="test/README.md" />
     <Project Path="test/OpenSpaceIA.Architecture.Tests/OpenSpaceIA.Architecture.Tests.csproj" />
     <Project Path="test/OpenSpaceIA.Core.Tests/OpenSpaceIA.Core.Tests.csproj" />
+    <Project Path="test/OpenSpaceIA.Reader.Tests/OpenSpaceIA.Reader.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <File Path="tools/README.md" />

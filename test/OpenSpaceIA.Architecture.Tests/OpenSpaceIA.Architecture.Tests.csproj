@@ -4,6 +4,7 @@
   <!-- Projects: every source project, so that its assembly can be analyzed -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenSpaceIA.Core\OpenSpaceIA.Core.csproj" />
+    <ProjectReference Include="..\..\src\OpenSpaceIA.Reader\OpenSpaceIA.Reader.csproj" />
   </ItemGroup>
 
   <!-- Packages (versions in Directory.Packages.props) -->
