@@ -97,11 +97,11 @@ public sealed class TranscriptCursorTests
     /// Method used to build a cursor that has read up to a position, with one open call and lines skipped
     /// </summary>
     /// <returns>The cursor, at position 100</returns>
-    private static TranscriptCursor ReadCursor()
+    private static TranscriptCursor<OpenToolCalls> ReadCursor()
     {
         // Moving a new cursor, with an open call
-        TranscriptCursor cursor = new TranscriptCursor();
-        cursor.Calls.Add("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Read\"}]}}");
+        TranscriptCursor<OpenToolCalls> cursor = new TranscriptCursor<OpenToolCalls>();
+        cursor.Follower.Add("{\"type\":\"assistant\",\"message\":{\"content\":[{\"type\":\"tool_use\",\"id\":\"toolu_1\",\"name\":\"Read\"}]}}");
         cursor.MoveTo(100, 2);
 
         // Function's return
@@ -119,11 +119,11 @@ public sealed class TranscriptCursorTests
     public void NewCursorIsAtTheStart()
     {
         // Building a cursor
-        TranscriptCursor cursor = new TranscriptCursor();
+        TranscriptCursor<OpenToolCalls> cursor = new TranscriptCursor<OpenToolCalls>();
 
         // Checking its state
         cursor.Offset.ShouldBe(0);
-        cursor.Calls.Count.ShouldBe(0);
+        cursor.Follower.Count.ShouldBe(0);
         cursor.TooLongLineCount.ShouldBe(0);
     }
 
@@ -134,7 +134,7 @@ public sealed class TranscriptCursorTests
     public void MovingAddsTheLinesSkipped()
     {
         // Moving the cursor twice
-        TranscriptCursor cursor = ReadCursor();
+        TranscriptCursor<OpenToolCalls> cursor = ReadCursor();
         cursor.MoveTo(100, 1);
 
         // Checking the position and the count
@@ -149,7 +149,7 @@ public sealed class TranscriptCursorTests
     public void CursorNeverMovesBackward()
     {
         // Moving the cursor backward, then with a negative count
-        TranscriptCursor cursor = ReadCursor();
+        TranscriptCursor<OpenToolCalls> cursor = ReadCursor();
         ArgumentOutOfRangeException backward = Should.Throw<ArgumentOutOfRangeException>(() => cursor.MoveTo(99, 0));
         ArgumentOutOfRangeException negative = Should.Throw<ArgumentOutOfRangeException>(() => cursor.MoveTo(100, -1));
 
@@ -165,14 +165,14 @@ public sealed class TranscriptCursorTests
     public void ShorterTranscriptRestartsTheCursor()
     {
         // Checking the same size, then one byte less
-        TranscriptCursor cursor = ReadCursor();
+        TranscriptCursor<OpenToolCalls> cursor = ReadCursor();
         cursor.RestartIfShorter(100).ShouldBeFalse();
         cursor.Offset.ShouldBe(100);
         cursor.RestartIfShorter(99).ShouldBeTrue();
 
         // Checking that nothing found is kept
         cursor.Offset.ShouldBe(0);
-        cursor.Calls.Count.ShouldBe(0);
+        cursor.Follower.Count.ShouldBe(0);
         cursor.TooLongLineCount.ShouldBe(0);
     }
 
@@ -183,12 +183,12 @@ public sealed class TranscriptCursorTests
     public void RestartForgetsEverything()
     {
         // Restarting a cursor that has read
-        TranscriptCursor cursor = ReadCursor();
+        TranscriptCursor<OpenToolCalls> cursor = ReadCursor();
         cursor.Restart();
 
         // Checking its state
         cursor.Offset.ShouldBe(0);
-        cursor.Calls.Count.ShouldBe(0);
+        cursor.Follower.Count.ShouldBe(0);
         cursor.TooLongLineCount.ShouldBe(0);
     }
 

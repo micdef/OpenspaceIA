@@ -32,7 +32,7 @@ namespace OpenSpaceIA.Reader;
 /// 2026-10-31). A line that is not a JSON object, or whose
 /// identifiers cannot be read, is counted and changes nothing; a blank line is left out. A line is never kept.</para>
 /// </remarks>
-internal sealed class OpenToolCalls
+internal sealed class OpenToolCalls : ITranscriptFollower
 {
     #region Members
 
