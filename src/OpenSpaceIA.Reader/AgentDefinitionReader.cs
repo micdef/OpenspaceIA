@@ -23,13 +23,14 @@ namespace OpenSpaceIA.Reader;
 /// <remarks>
 /// <para><b>Purpose:</b> gives the core one agent type per definition of the user (doc/analyse/roadmap.md, 0.4.0). The
 /// built-in agents (Explore, Plan…) have no file: they are known from their runs, not from here.</para>
-/// <para><b>Behavior:</b> lists the top of the agents folder, in the ordinal order of the names (the listing reads names
-/// only), and reads each <c>.md</c> file with <see cref="ClaudeFileReader"/>, so that the allow-list, the links and the size
-/// limit apply to every file read; a file with another extension (a backup <c>.md.bak-…</c>, a note) is not a definition and
-/// is left out without a problem, except an extension <c>.md</c> written in another case, which is reported. Claude Code
-/// also reads the subfolders of this folder: they are not read yet, and each one is reported. A file that cannot be read or
-/// parsed is reported and does not stop the others. Two definitions with the same name: the first one in the order of the
-/// names is kept and the other is reported (Claude Code keeps one of them in an order it does not document). When nothing
+/// <para><b>Behavior:</b> lists the agents folder and its subfolders, as Claude Code does: each folder in the ordinal order
+/// of its names, a subfolder read at the place of its name (the listing reads names only). A subfolder that is a junction or
+/// a symbolic link is not followed, and it is reported: it could lead out of the folder of Claude Code, or into a loop. Each
+/// <c>.md</c> file is read with <see cref="ClaudeFileReader"/>, so that the allow-list, the links and the size limit apply to
+/// every file read; a file with another extension (a backup <c>.md.bak-…</c>, a note) is not a definition and is left out
+/// without a problem, except an extension <c>.md</c> written in another case, which is reported. A file that cannot be read
+/// or parsed is reported and does not stop the others. Two definitions with the same name: the first one in the order of the
+/// reading is kept and the other is reported (Claude Code keeps one of them in an order it does not document). When nothing
 /// exists at the place of the agents folder, there is no agent and no problem, since a user may have no agent of their own
 /// (a missing folder of Claude Code is the concern of the reading of the activity); anything else that cannot be listed (a
 /// file, a link to a missing target, a refused access) is reported. Known limit: a named pipe called <c>x.md</c> would block
@@ -128,18 +129,18 @@ internal sealed class AgentDefinitionReader
     #region Privates
 
     /// <summary>
-    /// Method used to list the entries at the top of the agents folder, in the ordinal order of their names
+    /// Method used to list the entries of a folder of definitions, in the ordinal order of their names
     /// </summary>
-    /// <param name="agentsFolder">[Cannot be null] Full path of the agents folder</param>
+    /// <param name="folder">[Cannot be null] Full path of the agents folder or of one of its subfolders</param>
     /// <param name="problems">[Cannot be null] Problems, where a folder that cannot be listed is added</param>
     /// <returns>The files and the folders; empty when the folder is missing or cannot be listed</returns>
-    private static List<FileSystemInfo> ListEntries(string agentsFolder, List<ReadProblem> problems)
+    private static List<FileSystemInfo> ListEntries(string folder, List<ReadProblem> problems)
     {
-        // Reporting an agents entry that exists but is not a folder (a file; on Linux, a link to a missing target)
-        if (!Directory.Exists(agentsFolder))
+        // Reporting an entry that exists but is not a folder (a file; on Linux, a link to a missing target)
+        if (!Directory.Exists(folder))
         {
-            if (Exists(agentsFolder))
-                problems.Add(new ReadProblem(agentsFolder, "The agents entry cannot be listed: it is not a folder (a file, or a link to a missing target), so no definition is read"));
+            if (Exists(folder))
+                problems.Add(new ReadProblem(folder, "The entry cannot be listed: it is not a folder (a file, or a link to a missing target), so no definition is read in it"));
 
             // Function's return
             return new List<FileSystemInfo>();
@@ -148,7 +149,7 @@ internal sealed class AgentDefinitionReader
         try
         {
             // Listing the entries, and sorting them so that the result does not depend on the system
-            List<FileSystemInfo> entries = new DirectoryInfo(agentsFolder).EnumerateFileSystemInfos().ToList();
+            List<FileSystemInfo> entries = new DirectoryInfo(folder).EnumerateFileSystemInfos().ToList();
             entries.Sort((first, second) => string.CompareOrdinal(first.Name, second.Name));
 
             // Function's return
@@ -156,24 +157,82 @@ internal sealed class AgentDefinitionReader
         }
         catch (DirectoryNotFoundException exception)
         {
-            problems.Add(new ReadProblem(agentsFolder, $"The agents folder cannot be listed (a link to a missing target, or a folder removed meanwhile): {Describe(exception)}"));
+            problems.Add(new ReadProblem(folder, $"The folder cannot be listed (a link to a missing target, or a folder removed meanwhile): {Describe(exception)}"));
 
             // Function's return
             return new List<FileSystemInfo>();
         }
         catch (UnauthorizedAccessException exception)
         {
-            problems.Add(new ReadProblem(agentsFolder, $"The agents folder cannot be listed: {Describe(exception)}"));
+            problems.Add(new ReadProblem(folder, $"The folder cannot be listed: {Describe(exception)}"));
 
             // Function's return
             return new List<FileSystemInfo>();
         }
         catch (IOException exception)
         {
-            problems.Add(new ReadProblem(agentsFolder, $"The agents folder cannot be listed: {Describe(exception)}"));
+            problems.Add(new ReadProblem(folder, $"The folder cannot be listed: {Describe(exception)}"));
 
             // Function's return
             return new List<FileSystemInfo>();
+        }
+    }
+
+    /// <summary>
+    /// Method used to read the definitions of a folder, and of its subfolders at the place of their names
+    /// </summary>
+    /// <param name="folder">[Cannot be null] Full path of the agents folder or of one of its subfolders</param>
+    /// <param name="agentTypes">[Cannot be null] Agent types read, where the new ones are added</param>
+    /// <param name="filesByName">[Cannot be null] File of each name already read, to find a second definition of a name</param>
+    /// <param name="problems">[Cannot be null] Problems, where every file or folder left out is added</param>
+    private void ReadFolder(string folder, List<AgentType> agentTypes, Dictionary<string, string> filesByName, List<ReadProblem> problems)
+    {
+        foreach (FileSystemInfo entry in ListEntries(folder, problems))
+        {
+            // Reporting a link to a folder, which is not followed: it could lead out of the folder of Claude Code, or into a loop
+            if (entry is DirectoryInfo && (entry.Attributes & FileAttributes.ReparsePoint) != 0)
+            {
+                problems.Add(new ReadProblem(entry.FullName, "The subfolder is a junction or a symbolic link: it is not followed, so the definitions it leads to are not read"));
+                continue;
+            }
+
+            // Reading a subfolder, at the place of its name
+            if (entry is DirectoryInfo)
+            {
+                ReadFolder(entry.FullName, agentTypes, filesByName, problems);
+                continue;
+            }
+
+            // Leaving out a file that is not a definition, and reporting an extension written in another case
+            if (!string.Equals(entry.Extension, DefinitionExtension, StringComparison.Ordinal))
+            {
+                if (string.Equals(entry.Extension, DefinitionExtension, StringComparison.OrdinalIgnoreCase))
+                    problems.Add(new ReadProblem(entry.FullName, $"The extension is not written {DefinitionExtension} in lowercase: the file is not read"));
+                continue;
+            }
+
+            // Reading the file, and reporting a failure
+            FileReadResult result = _fileReader.ReadText(entry.FullName);
+            if (!result.IsSuccess)
+            {
+                problems.Add(new ReadProblem(entry.FullName, $"The definition cannot be read ({result.Failure}): {result.Detail}"));
+                continue;
+            }
+
+            // Parsing the definition, whose problems are added by the parser
+            AgentType? agentType = AgentDefinitionParser.Parse(entry.FullName, result.Content!, problems);
+            if (agentType is null)
+                continue;
+
+            // Keeping the first definition of a name, and reporting the others
+            if (filesByName.TryGetValue(agentType.Name, out string? firstFile))
+            {
+                problems.Add(new ReadProblem(entry.FullName, $"The name: {agentType.Name} is already defined by {firstFile}: this definition is left out"));
+                continue;
+            }
+
+            filesByName.Add(agentType.Name, entry.FullName);
+            agentTypes.Add(agentType);
         }
     }
 
@@ -238,51 +297,11 @@ internal sealed class AgentDefinitionReader
     /// <returns>The agent types read, and the problems met</returns>
     public AgentDefinitions Read()
     {
-        // Listing the agents folder
+        // Reading the agents folder and its subfolders
         List<AgentType> agentTypes = new List<AgentType>();
         List<ReadProblem> problems = new List<ReadProblem>();
         Dictionary<string, string> filesByName = new Dictionary<string, string>(StringComparer.Ordinal);
-        string agentsFolder = Path.Combine(_fileReader.Folder.RootPath, AgentsFolderName);
-        foreach (FileSystemInfo entry in ListEntries(agentsFolder, problems))
-        {
-            // Reporting a subfolder, which is not read
-            if (entry is DirectoryInfo)
-            {
-                problems.Add(new ReadProblem(entry.FullName, "A subfolder of the agents folder is not read: the definitions it holds are not shown"));
-                continue;
-            }
-
-            // Leaving out a file that is not a definition, and reporting an extension written in another case
-            if (!string.Equals(entry.Extension, DefinitionExtension, StringComparison.Ordinal))
-            {
-                if (string.Equals(entry.Extension, DefinitionExtension, StringComparison.OrdinalIgnoreCase))
-                    problems.Add(new ReadProblem(entry.FullName, $"The extension is not written {DefinitionExtension} in lowercase: the file is not read"));
-                continue;
-            }
-
-            // Reading the file, and reporting a failure
-            FileReadResult result = _fileReader.ReadText(entry.FullName);
-            if (!result.IsSuccess)
-            {
-                problems.Add(new ReadProblem(entry.FullName, $"The definition cannot be read ({result.Failure}): {result.Detail}"));
-                continue;
-            }
-
-            // Parsing the definition, whose problems are added by the parser
-            AgentType? agentType = AgentDefinitionParser.Parse(entry.FullName, result.Content!, problems);
-            if (agentType is null)
-                continue;
-
-            // Keeping the first definition of a name, and reporting the others
-            if (filesByName.TryGetValue(agentType.Name, out string? firstFile))
-            {
-                problems.Add(new ReadProblem(entry.FullName, $"The name: {agentType.Name} is already defined by {firstFile}: this definition is left out"));
-                continue;
-            }
-
-            filesByName.Add(agentType.Name, entry.FullName);
-            agentTypes.Add(agentType);
-        }
+        ReadFolder(Path.Combine(_fileReader.Folder.RootPath, AgentsFolderName), agentTypes, filesByName, problems);
 
         // Function's return
         return new AgentDefinitions(agentTypes, problems);

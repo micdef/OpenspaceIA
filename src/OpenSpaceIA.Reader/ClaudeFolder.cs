@@ -25,7 +25,8 @@ namespace OpenSpaceIA.Reader;
 /// The reader opens only what the screens need, chosen by an allow-list: any file that is not in it is refused, so that a
 /// new file of Claude Code is never read by mistake.</para>
 /// <para><b>Behavior:</b> immutable; it never touches the disk. The allow-list holds three kinds of files, compared with
-/// their case: <c>sessions/&lt;name&gt;.json</c>, <c>agents/&lt;name&gt;.md</c>, and the <c>.jsonl</c> transcripts under
+/// their case: <c>sessions/&lt;name&gt;.json</c>, the <c>.md</c> agent definitions under <c>agents/</c> (at the top or in a
+/// subfolder, since Claude Code reads both), and the <c>.jsonl</c> transcripts under
 /// <c>projects/&lt;folder&gt;/</c>, outside any <c>memory</c> folder (that name is compared without its case, since it is the
 /// same folder on Windows). A relative path, a path outside the folder, a path that climbs out of it with two dots, a path
 /// the system cannot resolve, and a segment holding a colon (an NTFS stream such as <c>memory::$INDEX_ALLOCATION</c> names
@@ -184,11 +185,11 @@ internal sealed class ClaudeFolder
             return HasExtension(segments[1], ".json");
         }
 
-        // Definitions of the agents: agents/<name>.md
-        if (segments.Length == 2 && segments[0] == "agents")
+        // Definitions of the agents: agents/.../<name>.md, at the top or in subfolders, which Claude Code reads too
+        if (segments.Length >= 2 && segments[0] == "agents")
         {
             // Function's return
-            return HasExtension(segments[1], ".md");
+            return HasExtension(segments[^1], ".md");
         }
 
         // Transcripts: projects/<folder>/.../<name>.jsonl, outside any memory folder
