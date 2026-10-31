@@ -686,6 +686,216 @@ public sealed class ClaudeFileReaderTests : IDisposable
     }
 
     /// <summary>
+    /// Method used to read the lines of a file into a list
+    /// </summary>
+    /// <param name="reader">[Cannot be null] Reader under test</param>
+    /// <param name="fullPath">[Cannot be null] Full path of the file</param>
+    /// <param name="lines">The lines read, in their order</param>
+    /// <returns>The result of the reading</returns>
+    private static LineReadResult ReadLines(ClaudeFileReader reader, string fullPath, out List<string> lines)
+    {
+        // Reading the lines into a new list
+        List<string> read = new List<string>();
+        LineReadResult result = reader.ReadLines(fullPath, read.Add);
+        lines = read;
+
+        // Function's return
+        return result;
+    }
+
+    /// <summary>
+    /// The lines of a transcript are read in their order, without their line endings and without the byte order mark
+    /// </summary>
+    [Fact]
+    public void LinesAreReadInTheirOrderWithoutEndings()
+    {
+        // Writing a transcript with a byte order mark, mixed line endings and an empty line
+        string fullPath = WriteFile("projects/C--p/s.jsonl", new UTF8Encoding(true).GetPreamble().Concat(Encoding.UTF8.GetBytes("{\"a\":1}\r\n{\"b\":2}\n\n{\"c\":\"é\"}\n")).ToArray());
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking the result
+        result.IsSuccess.ShouldBeTrue();
+        lines.ShouldBe(new List<string>() { "{\"a\":1}", "{\"b\":2}", string.Empty, "{\"c\":\"é\"}" });
+        result.LineCount.ShouldBe(4);
+        result.TooLongLineCount.ShouldBe(0);
+    }
+
+    /// <summary>
+    /// A last line without a line feed (Claude Code may be writing it) is given too
+    /// </summary>
+    [Fact]
+    public void LastLineWithoutALineFeedIsGiven()
+    {
+        // Writing a transcript whose last line is not ended
+        string fullPath = WriteText("projects/C--p/s.jsonl", "{\"a\":1}\n{\"b\":");
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking the result
+        result.IsSuccess.ShouldBeTrue();
+        lines.ShouldBe(new List<string>() { "{\"a\":1}", "{\"b\":" });
+    }
+
+    /// <summary>
+    /// An empty transcript gives no line and is a success
+    /// </summary>
+    [Fact]
+    public void EmptyTranscriptGivesNoLine()
+    {
+        // Writing an empty transcript
+        string fullPath = WriteFile("projects/C--p/s.jsonl", Array.Empty<byte>());
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking the result
+        result.IsSuccess.ShouldBeTrue();
+        lines.ShouldBeEmpty();
+        result.LineCount.ShouldBe(0);
+    }
+
+    /// <summary>
+    /// A line longer than the size limit is skipped and counted; the lines around it are read, so a file larger than the
+    /// limit can be read
+    /// </summary>
+    [Fact]
+    public void LineLongerThanTheLimitIsSkippedAndCounted()
+    {
+        // Writing a transcript of 200 bytes whose middle line has 100 bytes, read with a limit of 32 bytes per line
+        string fullPath = WriteText("projects/C--p/s.jsonl", "short-1\n" + new string('x', 100) + "\nshort-2\n" + new string('y', 32) + "\n" + new string('z', 33));
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder, 32), fullPath, out List<string> lines);
+
+        // Checking the result: a line of exactly the limit is read, one byte more is skipped
+        result.IsSuccess.ShouldBeTrue();
+        lines.ShouldBe(new List<string>() { "short-1", "short-2", new string('y', 32) });
+        result.LineCount.ShouldBe(3);
+        result.TooLongLineCount.ShouldBe(2);
+    }
+
+    /// <summary>
+    /// Invalid bytes become the replacement character instead of failing
+    /// </summary>
+    [Fact]
+    public void InvalidBytesOfALineBecomeTheReplacementCharacter()
+    {
+        // Writing a line with a byte that is not valid UTF-8
+        string fullPath = WriteFile("projects/C--p/s.jsonl", new byte[] { (byte)'a', 0xFF, (byte)'b', (byte)'\n' });
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking the result
+        result.IsSuccess.ShouldBeTrue();
+        lines.ShouldBe(new List<string>() { "a�b" });
+    }
+
+    /// <summary>
+    /// The lines of a file outside the allow-list are never read
+    /// </summary>
+    [Fact]
+    public void LinesOfAForbiddenFileAreNotRead()
+    {
+        // Writing a transcript in the forbidden memory folder
+        string fullPath = WriteText("projects/C--p/memory/m.jsonl", "invented-memory\n");
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking that nothing was read
+        result.IsSuccess.ShouldBeFalse();
+        result.Failure.ShouldBe(FileReadFailure.NotAllowed);
+        lines.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// The lines of a missing file give a failure, not an exception
+    /// </summary>
+    [Fact]
+    public void LinesOfAMissingFileAreNotFound()
+    {
+        // Reading a missing transcript
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), Path.Combine(_root, "projects", "C--p", "missing.jsonl"), out List<string> lines);
+
+        // Checking the failure
+        result.Failure.ShouldBe(FileReadFailure.NotFound);
+        result.Detail.ShouldNotBeNullOrWhiteSpace();
+        lines.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// The lines of a file reached through a junction are never read
+    /// </summary>
+    [Fact]
+    public void LinesThroughAJunctionAreNotRead()
+    {
+        // Skipping where junctions do not exist
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "Junctions are a feature of NTFS");
+
+        // Writing a transcript in the forbidden memory folder, and a junction next to it that leads there
+        WriteText("projects/C--p/memory/m.jsonl", "invented-memory\n");
+        string junction = Path.Combine(_root, "projects", "C--p", "link");
+        using (Process mklink = Process.Start(new ProcessStartInfo("cmd.exe", $"/c mklink /J \"{junction}\" \"{Path.Combine(_root, "projects", "C--p", "memory")}\"") { CreateNoWindow = true, UseShellExecute = false })!)
+        {
+            mklink.WaitForExit();
+            mklink.ExitCode.ShouldBe(0);
+        }
+        try
+        {
+            // Reading the lines through the junction
+            LineReadResult result = ReadLines(new ClaudeFileReader(_folder), Path.Combine(junction, "m.jsonl"), out List<string> lines);
+
+            // Checking that nothing was read
+            result.Failure.ShouldBe(FileReadFailure.NotAllowed);
+            lines.ShouldBeEmpty();
+        }
+        finally
+        {
+            // Removing the junction itself, not what it leads to
+            if (Directory.Exists(junction))
+                Directory.Delete(junction);
+        }
+    }
+
+    /// <summary>
+    /// A transcript that Claude Code keeps open for writing is still read
+    /// </summary>
+    [Fact]
+    public void LinesOfAFileOpenForWritingAreRead()
+    {
+        // Writing a transcript and keeping it open for writing, as Claude Code does
+        string fullPath = WriteText("projects/C--p/s.jsonl", "{\"a\":1}\n");
+        using FileStream writer = new FileStream(fullPath, FileMode.Open, FileAccess.ReadWrite, FileShare.ReadWrite | FileShare.Delete);
+
+        // Reading the lines
+        LineReadResult result = ReadLines(new ClaudeFileReader(_folder), fullPath, out List<string> lines);
+
+        // Checking the result
+        result.IsSuccess.ShouldBeTrue();
+        lines.ShouldBe(new List<string>() { "{\"a\":1}" });
+    }
+
+    /// <summary>
+    /// The arguments of the reading of the lines are required
+    /// </summary>
+    [Fact]
+    public void ArgumentsOfTheReadingOfTheLinesAreRequired()
+    {
+        // Reading without each argument
+        ClaudeFileReader reader = new ClaudeFileReader(_folder);
+        ArgumentNullException withoutPath = Should.Throw<ArgumentNullException>(() => reader.ReadLines(" ", _ => { }));
+        ArgumentNullException withoutAction = Should.Throw<ArgumentNullException>(() => reader.ReadLines(Path.Combine(_root, "projects", "C--p", "s.jsonl"), null!));
+
+        // Checking the parameters in fault
+        withoutPath.ParamName.ShouldBe("fullPath");
+        withoutAction.ParamName.ShouldBe("onLine");
+    }
+
+    /// <summary>
     /// The Reader writes nothing: files, folders, attributes, dates, sizes and contents stay as they were
     /// </summary>
     [Fact]

@@ -26,7 +26,8 @@ namespace OpenSpaceIA.Reader;
 /// new file of Claude Code is never read by mistake.</para>
 /// <para><b>Behavior:</b> immutable; it never touches the disk. The allow-list holds three kinds of files, compared with
 /// their case: <c>sessions/&lt;name&gt;.json</c>, the <c>.md</c> agent definitions under <c>agents/</c> (at the top or in a
-/// subfolder, since Claude Code reads both), and the <c>.jsonl</c> transcripts under
+/// subfolder, since Claude Code reads both), the descriptions of the sub-agent runs
+/// <c>subagents/agent-&lt;id&gt;.meta.json</c> under <c>projects/</c>, and the <c>.jsonl</c> transcripts under
 /// <c>projects/&lt;folder&gt;/</c>, outside any <c>memory</c> folder (that name is compared without its case, since it is the
 /// same folder on Windows). A relative path, a path outside the folder, a path that climbs out of it with two dots, a path
 /// the system cannot resolve, and a segment holding a colon (an NTFS stream such as <c>memory::$INDEX_ALLOCATION</c> names
@@ -192,13 +193,16 @@ internal sealed class ClaudeFolder
             return HasExtension(segments[^1], ".md");
         }
 
-        // Transcripts: projects/<folder>/.../<name>.jsonl, outside any memory folder
+        // Transcripts: projects/<folder>/.../<name>.jsonl, and descriptions of runs: projects/<folder>/.../subagents/agent-<id>.meta.json,
+        // outside any memory folder
         if (segments.Length >= 3 && segments[0] == "projects")
         {
             bool isInMemory = segments.Skip(1).Any(segment => string.Equals(segment, MemoryFolderName, StringComparison.OrdinalIgnoreCase));
+            bool isRunDescription = segments.Length >= 4 && segments[^2] == "subagents" && segments[^1].StartsWith("agent-", StringComparison.Ordinal)
+                && HasExtension(segments[^1], ".meta.json") && segments[^1].Length > "agent-.meta.json".Length;
 
             // Function's return
-            return !isInMemory && HasExtension(segments[^1], ".jsonl");
+            return !isInMemory && (HasExtension(segments[^1], ".jsonl") || isRunDescription);
         }
 
         // Function's return

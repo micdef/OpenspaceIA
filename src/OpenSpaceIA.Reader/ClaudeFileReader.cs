@@ -32,8 +32,9 @@ namespace OpenSpaceIA.Reader;
 /// are checked just before the file is opened: a link created between the check and the opening is not seen. Two known
 /// limits: a hard link is not a link for the system, so a hard link inside the folder to a forbidden file is read (creating
 /// one needs the right to write in the folder, which already gives its secrets); and every reparse point is refused, so a
-/// folder kept online only by a cloud service would be refused too (not verified). Large transcripts are not read by this
-/// class.</para>
+/// folder kept online only by a cloud service would be refused too (not verified). A small file is read in one go
+/// (<see cref="ReadText"/>, limited in size); a transcript is read line by line (<see cref="ReadLines"/>, each line limited
+/// in size).</para>
 /// </remarks>
 internal sealed class ClaudeFileReader
 {
@@ -97,7 +98,8 @@ internal sealed class ClaudeFileReader
     #region Members & Properties
 
     /// <summary>
-    /// Size limit of a file, in bytes (the byte order mark included); a larger file is refused
+    /// Size limit, in bytes: of a file read in one go (the byte order mark included), and of each line of a file read line by
+    /// line (without its line feed); a larger file is refused, a longer line is skipped
     /// </summary>
     public long MaximumBytes { get; }
 
@@ -188,6 +190,124 @@ internal sealed class ClaudeFileReader
 
         // Function's return
         return content.ToArray();
+    }
+
+    /// <summary>
+    /// Method used to split an open file into lines, given one by one, without ever holding more than one line in memory
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Purpose:</b> reads a transcript of hundreds of megabytes with the memory of one line.</para>
+    /// <para><b>Behavior:</b> a line ends with a line feed; a last line without one is given too (Claude Code may be writing
+    /// it). A line whose bytes (without its line feed) are more than the size limit is skipped and counted, and its bytes are
+    /// never kept beyond the limit. Each line given is decoded by <see cref="DecodeLine"/>.</para>
+    /// </remarks>
+    /// <param name="stream">[Cannot be null] File open for reading</param>
+    /// <param name="onLine">[Cannot be null] Action given each line, in the order of the file</param>
+    /// <param name="lineCount">Number of lines given</param>
+    /// <param name="tooLongLineCount">Number of lines skipped because they were too long</param>
+    /// <exception cref="IOException">If the disk fails while the file is read (caught by the caller)</exception>
+    private void SplitIntoLines(Stream stream, Action<string> onLine, out int lineCount, out int tooLongLineCount)
+    {
+        // Reading block by block, and cutting each block at its line feeds
+        lineCount = 0;
+        tooLongLineCount = 0;
+        using MemoryStream line = new MemoryStream();
+        bool isTooLong = false;
+        bool isFirstLine = true;
+        byte[] block = new byte[BlockSize];
+        int read;
+        while ((read = stream.Read(block, 0, BlockSize)) > 0)
+        {
+            int start = 0;
+            int end;
+            while ((end = Array.IndexOf(block, (byte)'\n', start, read - start)) >= 0)
+            {
+                // Ending the line at its line feed, then starting the next one
+                isTooLong = AppendToLine(line, block, start, end - start, isTooLong);
+                EndLine(line, isTooLong, isFirstLine, onLine, ref lineCount, ref tooLongLineCount);
+                isTooLong = false;
+                isFirstLine = false;
+                start = end + 1;
+            }
+
+            // Keeping the start of a line that goes on in the next block
+            isTooLong = AppendToLine(line, block, start, read - start, isTooLong);
+        }
+
+        // Giving the last line, which has no line feed
+        if (line.Length > 0 || isTooLong)
+            EndLine(line, isTooLong, isFirstLine, onLine, ref lineCount, ref tooLongLineCount);
+    }
+
+    /// <summary>
+    /// Method used to add bytes to the line being read, unless the line is already longer than the size limit
+    /// </summary>
+    /// <param name="line">[Cannot be null] Bytes of the line being read</param>
+    /// <param name="block">[Cannot be null] Block read from the file</param>
+    /// <param name="offset">Index of the first byte to add</param>
+    /// <param name="count">Number of bytes to add</param>
+    /// <param name="isTooLong">True when the line is already longer than the limit</param>
+    /// <returns>True when the line is now longer than the limit; its bytes are then dropped</returns>
+    private bool AppendToLine(MemoryStream line, byte[] block, int offset, int count, bool isTooLong)
+    {
+        // Dropping the bytes of a line that is longer than the limit
+        if (isTooLong || line.Length + count > MaximumBytes)
+        {
+            line.SetLength(0);
+
+            // Function's return
+            return true;
+        }
+
+        // Adding the bytes
+        line.Write(block, offset, count);
+
+        // Function's return
+        return false;
+    }
+
+    /// <summary>
+    /// Method used to end the line being read: it is given, or counted as too long, then the line is emptied
+    /// </summary>
+    /// <param name="line">[Cannot be null] Bytes of the line being read</param>
+    /// <param name="isTooLong">True when the line was longer than the limit</param>
+    /// <param name="isFirstLine">True for the first line of the file, which may start with a byte order mark</param>
+    /// <param name="onLine">[Cannot be null] Action given each line</param>
+    /// <param name="lineCount">Number of lines given, increased when the line is given</param>
+    /// <param name="tooLongLineCount">Number of lines skipped, increased when the line is too long</param>
+    private static void EndLine(MemoryStream line, bool isTooLong, bool isFirstLine, Action<string> onLine, ref int lineCount, ref int tooLongLineCount)
+    {
+        // Counting a line that was too long, or giving the line
+        if (isTooLong)
+        {
+            tooLongLineCount++;
+        }
+        else
+        {
+            onLine(DecodeLine(line.GetBuffer().AsSpan(0, (int)line.Length), isFirstLine));
+            lineCount++;
+        }
+
+        // Emptying the line
+        line.SetLength(0);
+    }
+
+    /// <summary>
+    /// Method used to turn the bytes of a line into text
+    /// </summary>
+    /// <param name="bytes">Bytes of the line, without its line feed</param>
+    /// <param name="isFirstLine">True for the first line of the file, whose byte order mark is removed</param>
+    /// <returns>The text of the line, without its carriage return</returns>
+    private static string DecodeLine(ReadOnlySpan<byte> bytes, bool isFirstLine)
+    {
+        // Leaving out the byte order mark of the file and the carriage return of the line
+        if (isFirstLine && bytes.StartsWith(_utf8ByteOrderMark))
+            bytes = bytes.Slice(_utf8ByteOrderMark.Length);
+        if (bytes.Length > 0 && bytes[^1] == (byte)'\r')
+            bytes = bytes.Slice(0, bytes.Length - 1);
+
+        // Function's return
+        return _utf8.GetString(bytes);
     }
 
     /// <summary>
@@ -330,6 +450,82 @@ internal sealed class ClaudeFileReader
         {
             // Function's return: a locked file, or an error of the disk
             return FileReadResult.Failed(FileReadFailure.Unreadable, Describe(exception));
+        }
+    }
+
+    /// <summary>
+    /// Method used to read the lines of a file of Claude Code, one by one, whatever the size of the file
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Purpose:</b> reads a transcript (up to hundreds of megabytes) without ever holding it in memory and without
+    /// ever disturbing Claude Code.</para>
+    /// <para><b>Behavior:</b> the same gates as <see cref="ReadText"/>: a file outside the allow-list is refused without
+    /// touching the disk, a file reached through a link is refused, and an allowed file is opened read-only with full sharing.
+    /// Here the size limit applies to each line, not to the file: a longer line is skipped and counted. Each line is given
+    /// to the action as soon as it is read, without its line feed and its carriage return, decoded as UTF-8 (a byte order mark
+    /// at the start of the file is removed, invalid bytes become the replacement character). The action must not throw an
+    /// exception of the disk: it would be reported as a failure of the file.</para>
+    /// </remarks>
+    /// <param name="fullPath">[Cannot be null] Full path of the file</param>
+    /// <param name="onLine">[Cannot be null] Action given each line, in the order of the file</param>
+    /// <returns>
+    /// Success      ==> The counts of the lines given and skipped<br/>
+    /// NotAllowed   ==> The file is not in the allow-list, or it is reached through a junction or a symbolic link<br/>
+    /// NotFound     ==> The file or one of its folders does not exist<br/>
+    /// AccessDenied ==> The system refused the access, or the path is a folder<br/>
+    /// Unreadable   ==> The file is locked by another program, or the disk failed (some lines may have been given)
+    /// </returns>
+    /// <exception cref="ArgumentNullException">If the path is null, empty or white spaces, or if the action is null</exception>
+    public LineReadResult ReadLines(string fullPath, Action<string> onLine)
+    {
+        // Checks
+        if (string.IsNullOrWhiteSpace(fullPath))
+            throw new ArgumentNullException(nameof(fullPath), $"The value of the parameter: {nameof(fullPath)} cannot be null or empty");
+        if (onLine is null)
+            throw new ArgumentNullException(nameof(onLine), $"The value of the parameter: {nameof(onLine)} cannot be null");
+
+        // Refusing a file outside the allow-list, before any access to the disk
+        if (!_folder.IsReadable(fullPath))
+        {
+            // Function's return
+            return LineReadResult.Failed(FileReadFailure.NotAllowed, $"The file is not in the allow-list of the reader: {fullPath}");
+        }
+
+        try
+        {
+            // Refusing a file reached through a junction or a symbolic link, which could lead to a forbidden place
+            if (IsReachedThroughALink(fullPath))
+            {
+                // Function's return
+                return LineReadResult.Failed(FileReadFailure.NotAllowed, $"The file is reached through a junction or a symbolic link: {fullPath}");
+            }
+
+            // Opening the file read-only, letting Claude Code read, write, rename and delete it meanwhile, and giving its lines
+            using FileStream stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            SplitIntoLines(stream, onLine, out int lineCount, out int tooLongLineCount);
+
+            // Function's return
+            return LineReadResult.Success(lineCount, tooLongLineCount);
+        }
+        catch (FileNotFoundException exception)
+        {
+            // Function's return
+            return LineReadResult.Failed(FileReadFailure.NotFound, Describe(exception));
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            // Function's return
+            return LineReadResult.Failed(FileReadFailure.NotFound, Describe(exception));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            // Function's return
+            return LineReadResult.Failed(FileReadFailure.AccessDenied, Describe(exception));
+        }
+        catch (IOException exception)
+        {
+            // Function's return: a locked file, or an error of the disk
+            return LineReadResult.Failed(FileReadFailure.Unreadable, Describe(exception));
         }
     }
 
