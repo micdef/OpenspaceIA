@@ -197,23 +197,32 @@ internal sealed class ClaudeFileReader
     /// </summary>
     /// <remarks>
     /// <para><b>Purpose:</b> reads a transcript of hundreds of megabytes with the memory of one line.</para>
-    /// <para><b>Behavior:</b> a line ends with a line feed; a last line without one is given too (Claude Code may be writing
-    /// it). A line whose bytes (without its line feed) are more than the size limit is skipped and counted, and its bytes are
-    /// never kept beyond the limit. Each line given is decoded by <see cref="DecodeLine"/>.</para>
+    /// <para><b>Behavior:</b> a line ends with a line feed. A last line without one is given only when it is asked (Claude
+    /// Code may still be writing it): otherwise it is neither given nor consumed, so that a later reading gives it whole. A
+    /// line whose bytes (without its line feed) are more than the size limit is skipped and counted, and its bytes are never
+    /// kept beyond the limit. Each line given is decoded by <see cref="DecodeLine"/>; the byte order mark is removed only
+    /// when the reading starts at the start of the file.</para>
     /// </remarks>
-    /// <param name="stream">[Cannot be null] File open for reading</param>
+    /// <param name="stream">[Cannot be null] File open for reading, at the position where the reading starts</param>
+    /// <param name="isAtStartOfFile">True when the reading starts at the start of the file</param>
+    /// <param name="givesUnfinishedLastLine">True to give a last line without line feed</param>
     /// <param name="onLine">[Cannot be null] Action given each line, in the order of the file</param>
     /// <param name="lineCount">Number of lines given</param>
     /// <param name="tooLongLineCount">Number of lines skipped because they were too long</param>
+    /// <param name="consumedBytes">Number of bytes consumed from the start of the reading: up to the last line feed, or to
+    /// the end when the last line is given</param>
     /// <exception cref="IOException">If the disk fails while the file is read (caught by the caller)</exception>
-    private void SplitIntoLines(Stream stream, Action<string> onLine, out int lineCount, out int tooLongLineCount)
+    private void SplitIntoLines(Stream stream, bool isAtStartOfFile, bool givesUnfinishedLastLine, Action<string> onLine,
+        out int lineCount, out int tooLongLineCount, out long consumedBytes)
     {
         // Reading block by block, and cutting each block at its line feeds
         lineCount = 0;
         tooLongLineCount = 0;
+        consumedBytes = 0;
+        long readBytes = 0;
         using MemoryStream line = new MemoryStream();
         bool isTooLong = false;
-        bool isFirstLine = true;
+        bool isFirstLine = isAtStartOfFile;
         byte[] block = new byte[BlockSize];
         int read;
         while ((read = stream.Read(block, 0, BlockSize)) > 0)
@@ -228,15 +237,20 @@ internal sealed class ClaudeFileReader
                 isTooLong = false;
                 isFirstLine = false;
                 start = end + 1;
+                consumedBytes = readBytes + start;
             }
 
             // Keeping the start of a line that goes on in the next block
             isTooLong = AppendToLine(line, block, start, read - start, isTooLong);
+            readBytes += read;
         }
 
-        // Giving the last line, which has no line feed
-        if (line.Length > 0 || isTooLong)
+        // Giving the last line, which has no line feed, when it is asked
+        if (givesUnfinishedLastLine && (line.Length > 0 || isTooLong))
+        {
             EndLine(line, isTooLong, isFirstLine, onLine, ref lineCount, ref tooLongLineCount);
+            consumedBytes = readBytes;
+        }
     }
 
     /// <summary>
@@ -373,6 +387,71 @@ internal sealed class ClaudeFileReader
         return _utf8.GetString(text);
     }
 
+    /// <summary>
+    /// Method used to read the lines of a file from a position, behind the gates of the reader
+    /// </summary>
+    /// <param name="fullPath">[Cannot be null] Full path of the file</param>
+    /// <param name="startOffset">Position where the reading starts, 0 or more</param>
+    /// <param name="givesUnfinishedLastLine">True to give a last line without line feed</param>
+    /// <param name="onLine">[Cannot be null] Action given each line</param>
+    /// <returns>The result of the reading, with its end position</returns>
+    private LineReadResult ReadLinesFrom(string fullPath, long startOffset, bool givesUnfinishedLastLine, Action<string> onLine)
+    {
+        // Refusing a file outside the allow-list, before any access to the disk
+        if (!_folder.IsReadable(fullPath))
+        {
+            // Function's return
+            return LineReadResult.Failed(FileReadFailure.NotAllowed, $"The file is not in the allow-list of the reader: {fullPath}");
+        }
+
+        try
+        {
+            // Refusing a file reached through a junction or a symbolic link, which could lead to a forbidden place
+            if (IsReachedThroughALink(fullPath))
+            {
+                // Function's return
+                return LineReadResult.Failed(FileReadFailure.NotAllowed, $"The file is reached through a junction or a symbolic link: {fullPath}");
+            }
+
+            // Opening the file read-only, letting Claude Code read, write, rename and delete it meanwhile
+            using FileStream stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+
+            // Keeping the position when it is beyond the end of the file: the caller sees that the file is shorter
+            if (startOffset > stream.Length)
+            {
+                // Function's return
+                return LineReadResult.Success(0, 0, startOffset);
+            }
+
+            // Giving the lines from the position
+            stream.Seek(startOffset, SeekOrigin.Begin);
+            SplitIntoLines(stream, startOffset == 0, givesUnfinishedLastLine, onLine, out int lineCount, out int tooLongLineCount, out long consumedBytes);
+
+            // Function's return
+            return LineReadResult.Success(lineCount, tooLongLineCount, startOffset + consumedBytes);
+        }
+        catch (FileNotFoundException exception)
+        {
+            // Function's return
+            return LineReadResult.Failed(FileReadFailure.NotFound, Describe(exception));
+        }
+        catch (DirectoryNotFoundException exception)
+        {
+            // Function's return
+            return LineReadResult.Failed(FileReadFailure.NotFound, Describe(exception));
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            // Function's return
+            return LineReadResult.Failed(FileReadFailure.AccessDenied, Describe(exception));
+        }
+        catch (IOException exception)
+        {
+            // Function's return: a locked file, or an error of the disk
+            return LineReadResult.Failed(FileReadFailure.Unreadable, Describe(exception));
+        }
+    }
+
     #endregion
 
     #region Publics
@@ -485,49 +564,40 @@ internal sealed class ClaudeFileReader
         if (onLine is null)
             throw new ArgumentNullException(nameof(onLine), $"The value of the parameter: {nameof(onLine)} cannot be null");
 
-        // Refusing a file outside the allow-list, before any access to the disk
-        if (!_folder.IsReadable(fullPath))
-        {
-            // Function's return
-            return LineReadResult.Failed(FileReadFailure.NotAllowed, $"The file is not in the allow-list of the reader: {fullPath}");
-        }
+        // Function's return
+        return ReadLinesFrom(fullPath, 0, true, onLine);
+    }
 
-        try
-        {
-            // Refusing a file reached through a junction or a symbolic link, which could lead to a forbidden place
-            if (IsReachedThroughALink(fullPath))
-            {
-                // Function's return
-                return LineReadResult.Failed(FileReadFailure.NotAllowed, $"The file is reached through a junction or a symbolic link: {fullPath}");
-            }
+    /// <summary>
+    /// Method used to read the complete lines of a file of Claude Code that follow a position, so that a transcript that
+    /// grows is read only where it grew
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Purpose:</b> a transcript of hundreds of megabytes is read once, then only its new lines at each snapshot.</para>
+    /// <para><b>Behavior:</b> the same gates and the same lines as <see cref="ReadLines"/>, from the given position. Only the
+    /// lines that end with a line feed are given: a last line without one (Claude Code may still be writing it) is not
+    /// consumed, and the end position of the result is just after the last line feed, so that the next reading starts there
+    /// and gives that line whole. The byte order mark is removed only when the reading starts at position 0. A position
+    /// beyond the end of the file gives no line and keeps the position: the caller compares it with the size of the file.</para>
+    /// </remarks>
+    /// <param name="fullPath">[Cannot be null] Full path of the file</param>
+    /// <param name="startOffset">Position where the reading starts, in bytes: 0, or the end position of a previous reading</param>
+    /// <param name="onLine">[Cannot be null] Action given each complete line, in the order of the file</param>
+    /// <returns>The same results as <see cref="ReadLines"/>; a success gives the end position of the reading</returns>
+    /// <exception cref="ArgumentNullException">If the path is null, empty or white spaces, or if the action is null</exception>
+    /// <exception cref="ArgumentOutOfRangeException">If the position is negative</exception>
+    public LineReadResult ReadCompleteLines(string fullPath, long startOffset, Action<string> onLine)
+    {
+        // Checks
+        if (string.IsNullOrWhiteSpace(fullPath))
+            throw new ArgumentNullException(nameof(fullPath), $"The value of the parameter: {nameof(fullPath)} cannot be null or empty");
+        if (startOffset < 0)
+            throw new ArgumentOutOfRangeException(nameof(startOffset), startOffset, $"The value of the parameter: {nameof(startOffset)} cannot be negative");
+        if (onLine is null)
+            throw new ArgumentNullException(nameof(onLine), $"The value of the parameter: {nameof(onLine)} cannot be null");
 
-            // Opening the file read-only, letting Claude Code read, write, rename and delete it meanwhile, and giving its lines
-            using FileStream stream = new FileStream(fullPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
-            SplitIntoLines(stream, onLine, out int lineCount, out int tooLongLineCount);
-
-            // Function's return
-            return LineReadResult.Success(lineCount, tooLongLineCount);
-        }
-        catch (FileNotFoundException exception)
-        {
-            // Function's return
-            return LineReadResult.Failed(FileReadFailure.NotFound, Describe(exception));
-        }
-        catch (DirectoryNotFoundException exception)
-        {
-            // Function's return
-            return LineReadResult.Failed(FileReadFailure.NotFound, Describe(exception));
-        }
-        catch (UnauthorizedAccessException exception)
-        {
-            // Function's return
-            return LineReadResult.Failed(FileReadFailure.AccessDenied, Describe(exception));
-        }
-        catch (IOException exception)
-        {
-            // Function's return: a locked file, or an error of the disk
-            return LineReadResult.Failed(FileReadFailure.Unreadable, Describe(exception));
-        }
+        // Function's return
+        return ReadLinesFrom(fullPath, startOffset, false, onLine);
     }
 
     #endregion

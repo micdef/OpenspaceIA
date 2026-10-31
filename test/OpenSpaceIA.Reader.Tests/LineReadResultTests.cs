@@ -105,12 +105,13 @@ public sealed class LineReadResultTests
     public void SuccessCarriesItsCounts()
     {
         // Building the result
-        LineReadResult result = LineReadResult.Success(12, 3);
+        LineReadResult result = LineReadResult.Success(12, 3, 4096);
 
         // Checking the result
         result.IsSuccess.ShouldBeTrue();
         result.LineCount.ShouldBe(12);
         result.TooLongLineCount.ShouldBe(3);
+        result.EndOffset.ShouldBe(4096);
         result.Failure.ShouldBeNull();
         result.Detail.ShouldBeNull();
     }
@@ -122,12 +123,14 @@ public sealed class LineReadResultTests
     public void CountsCannotBeNegative()
     {
         // Building results with negative counts
-        ArgumentOutOfRangeException lines = Should.Throw<ArgumentOutOfRangeException>(() => LineReadResult.Success(-1, 0));
-        ArgumentOutOfRangeException tooLong = Should.Throw<ArgumentOutOfRangeException>(() => LineReadResult.Success(0, -1));
+        ArgumentOutOfRangeException lines = Should.Throw<ArgumentOutOfRangeException>(() => LineReadResult.Success(-1, 0, 0));
+        ArgumentOutOfRangeException tooLong = Should.Throw<ArgumentOutOfRangeException>(() => LineReadResult.Success(0, -1, 0));
+        ArgumentOutOfRangeException offset = Should.Throw<ArgumentOutOfRangeException>(() => LineReadResult.Success(0, 0, -1));
 
         // Checking the parameters in fault
         lines.ParamName.ShouldBe("lineCount");
         tooLong.ParamName.ShouldBe("tooLongLineCount");
+        offset.ParamName.ShouldBe("endOffset");
     }
 
     /// <summary>
