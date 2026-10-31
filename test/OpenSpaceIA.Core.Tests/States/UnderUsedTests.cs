@@ -151,6 +151,36 @@ public sealed class UnderUsedTests
     }
 
     /// <summary>
+    /// Method used to apply the rule with a chief active over the whole window, so that the reference is the whole window, as
+    /// in the rule before its calibration (the tests of the mechanism below were written for it)
+    /// </summary>
+    /// <param name="periods">[Can be null] Periods of the agent type</param>
+    /// <param name="nowUtc">Now</param>
+    /// <param name="settings">[Can be null] Settings of the rule</param>
+    /// <returns>The answer of the rule</returns>
+    private static bool UnderUsed(IReadOnlyList<ActivityPeriod> periods, DateTimeOffset nowUtc, StateSettings settings)
+    {
+        // Building a chief active from long before the window to long after now
+        List<ActivityPeriod> alwaysActiveChief = new List<ActivityPeriod>
+        {
+            new ActivityPeriod(new Project("/home/dev/projects/chief"), PeriodKind.Working, Now().AddDays(-1000), Now().AddDays(1000)),
+        };
+
+        // Function's return
+        return AgentStateRules.IsUnderUsed(periods, alwaysActiveChief, nowUtc, settings);
+    }
+
+    /// <summary>
+    /// Method used to get the settings of the rule before its calibration: 90 % of idle time over seven days
+    /// </summary>
+    /// <returns>The settings</returns>
+    private static StateSettings NinetyPercent()
+    {
+        // Function's return
+        return Settings(TimeSpan.FromDays(7), 0.9);
+    }
+
+    /// <summary>
     /// Method used to build settings where only the window and the idle share of "under-used" are chosen
     /// </summary>
     /// <param name="window">Window of "under-used"</param>
@@ -167,13 +197,147 @@ public sealed class UnderUsedTests
     #region Publics
 
     /// <summary>
+    /// Calibrated rule: the idle time is measured during the active time of the chief only; an agent that worked 5 % of it is
+    /// not under-used, one that worked a little less is
+    /// </summary>
+    [Fact]
+    public void IdleTimeIsMeasuredDuringTheActiveTimeOfTheChief()
+    {
+        // Building a chief active 10 hours in the week, and agents that worked 30 minutes, 29 minutes and 36 minutes in it
+        List<ActivityPeriod> chief = new List<ActivityPeriod> { Work(TimeSpan.FromHours(30), TimeSpan.FromHours(20)) };
+        List<ActivityPeriod> halfAnHour = new List<ActivityPeriod> { Work(TimeSpan.FromHours(25), TimeSpan.FromHours(24.5)) };
+        List<ActivityPeriod> lessThanHalfAnHour = new List<ActivityPeriod> { Work(TimeSpan.FromHours(25), TimeSpan.FromHours(25) - TimeSpan.FromMinutes(29)) };
+
+        // Checking the rule with the default settings: 95 % idle of the 10 hours is 30 minutes of work
+        AgentStateRules.IsUnderUsed(halfAnHour, chief, Now(), StateSettings.Default).ShouldBeTrue();
+        AgentStateRules.IsUnderUsed(lessThanHalfAnHour, chief, Now(), StateSettings.Default).ShouldBeTrue();
+        AgentStateRules.IsUnderUsed(new List<ActivityPeriod> { Work(TimeSpan.FromHours(25), TimeSpan.FromHours(24.4)) }, chief, Now(), StateSettings.Default).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// The time of the agent outside the active time of the chief does not count
+    /// </summary>
+    [Fact]
+    public void WorkOutsideTheActiveTimeOfTheChiefDoesNotCount()
+    {
+        // Building a chief active one hour, and an agent that worked ten hours, all before the chief
+        List<ActivityPeriod> chief = new List<ActivityPeriod> { Work(TimeSpan.FromHours(5), TimeSpan.FromHours(4)) };
+        List<ActivityPeriod> agent = new List<ActivityPeriod> { Work(TimeSpan.FromHours(20), TimeSpan.FromHours(10)) };
+
+        // Checking that the agent is under-used
+        AgentStateRules.IsUnderUsed(agent, chief, Now(), StateSettings.Default).ShouldBeTrue();
+    }
+
+    /// <summary>
+    /// The waiting of the chief is active time too; overlapping periods of the chief are counted once
+    /// </summary>
+    [Fact]
+    public void ActiveTimeOfTheChiefIsItsWorkAndItsWaitsMerged()
+    {
+        // Building a chief that works one hour, waits one hour, and has a copy of its work (two sessions); the agent works
+        // six minutes, which is 5 % of two hours
+        List<ActivityPeriod> chief = new List<ActivityPeriod>
+        {
+            Work(TimeSpan.FromHours(4), TimeSpan.FromHours(3)),
+            Wait(TimeSpan.FromHours(3), TimeSpan.FromHours(2)),
+            Work(TimeSpan.FromHours(4), TimeSpan.FromHours(3)),
+        };
+        List<ActivityPeriod> agent = new List<ActivityPeriod> { Work(TimeSpan.FromHours(2.5), TimeSpan.FromHours(2.5) - TimeSpan.FromMinutes(6)) };
+
+        // Checking the rule: 6 minutes of 120 is 5 %, so 95 % idle exactly: under-used; a minute more is not
+        AgentStateRules.IsUnderUsed(agent, chief, Now(), StateSettings.Default).ShouldBeTrue();
+        AgentStateRules.IsUnderUsed(new List<ActivityPeriod> { Work(TimeSpan.FromHours(2.5), TimeSpan.FromHours(2.5) - TimeSpan.FromMinutes(7)) }, chief, Now(), StateSettings.Default).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// When the chief is active in separate ranges (a night between them), only the parts of the agent inside the ranges count,
+    /// even for a period of the agent that overlaps a range partly
+    /// </summary>
+    [Fact]
+    public void OnlyThePartsInsideTheRangesOfTheChiefCount()
+    {
+        // Building a chief active two hours, a gap of four hours, then two hours again: 240 minutes of reference
+        List<ActivityPeriod> chief = new List<ActivityPeriod>
+        {
+            Work(TimeSpan.FromHours(10), TimeSpan.FromHours(8)),
+            Work(TimeSpan.FromHours(4), TimeSpan.FromHours(2)),
+        };
+
+        // Building agents that work across the gap: 6 minutes inside each range (12 of 240, 5 %), then 7 minutes inside each
+        List<ActivityPeriod> sixMinutesEach = new List<ActivityPeriod>
+        {
+            Work(TimeSpan.FromHours(8) + TimeSpan.FromMinutes(6), TimeSpan.FromHours(4) - TimeSpan.FromMinutes(6)),
+        };
+        List<ActivityPeriod> sevenMinutesEach = new List<ActivityPeriod>
+        {
+            Work(TimeSpan.FromHours(8) + TimeSpan.FromMinutes(7), TimeSpan.FromHours(4) - TimeSpan.FromMinutes(7)),
+        };
+
+        // Checking the rule: the four hours of the gap do not count, so 95 % idle exactly is under-used, and 14 minutes is not
+        AgentStateRules.IsUnderUsed(sixMinutesEach, chief, Now(), StateSettings.Default).ShouldBeTrue();
+        AgentStateRules.IsUnderUsed(sevenMinutesEach, chief, Now(), StateSettings.Default).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// The periods of the chief are cut to the window: the part before its start and the part after now do not count
+    /// </summary>
+    [Fact]
+    public void PeriodsOfTheChiefAreCutToTheWindow()
+    {
+        // Building a chief active from 8 days ago to 2 hours after the start of the window, and from 1 hour ago to 1 hour after
+        // now: 3 hours of reference once cut
+        List<ActivityPeriod> chief = new List<ActivityPeriod>
+        {
+            Work(TimeSpan.FromDays(8), TimeSpan.FromDays(7) - TimeSpan.FromHours(2)),
+            Work(TimeSpan.FromHours(1), TimeSpan.FromHours(-1)),
+        };
+
+        // Building agents that work 9 minutes (5 % of 180) and 10 minutes in the last hour
+        List<ActivityPeriod> nineMinutes = new List<ActivityPeriod> { Work(TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(21)) };
+        List<ActivityPeriod> tenMinutes = new List<ActivityPeriod> { Work(TimeSpan.FromMinutes(30), TimeSpan.FromMinutes(20)) };
+
+        // Checking the rule: a reference not cut (more than a day) would make the agent of 10 minutes under-used
+        AgentStateRules.IsUnderUsed(nineMinutes, chief, Now(), StateSettings.Default).ShouldBeTrue();
+        AgentStateRules.IsUnderUsed(tenMinutes, chief, Now(), StateSettings.Default).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// Without any active time of the chief in the window, there is nothing to compare with: not under-used
+    /// </summary>
+    [Fact]
+    public void WithoutActiveTimeOfTheChiefNobodyIsUnderUsed()
+    {
+        // Checking an agent that never worked, with a chief never active, and a chief active only before the window
+        AgentStateRules.IsUnderUsed(new List<ActivityPeriod>(), new List<ActivityPeriod>(), Now(), StateSettings.Default).ShouldBeFalse();
+        AgentStateRules.IsUnderUsed(new List<ActivityPeriod>(), new List<ActivityPeriod> { Work(TimeSpan.FromDays(9), TimeSpan.FromDays(8)) }, Now(), StateSettings.Default).ShouldBeFalse();
+    }
+
+    /// <summary>
+    /// The periods of the chief are required and cannot hold null
+    /// </summary>
+    [Fact]
+    public void PeriodsOfTheChiefAreChecked()
+    {
+        // Calling the rule without periods of the chief, then with a null one
+        ArgumentNullException withoutChief = Should.Throw<ArgumentNullException>(
+            () => AgentStateRules.IsUnderUsed(new List<ActivityPeriod>(), null!, Now(), StateSettings.Default));
+        ArgumentException nullChief = Should.Throw<ArgumentException>(
+            () => AgentStateRules.IsUnderUsed(new List<ActivityPeriod>(), new List<ActivityPeriod> { null! }, Now(), StateSettings.Default));
+
+        // Checking the parameters in fault
+        withoutChief.ParamName.ShouldBe("chiefPeriods");
+        nullChief.ShouldBeOfType<ArgumentException>();
+        nullChief.ParamName.ShouldBe("chiefPeriods");
+    }
+
+    /// <summary>
     /// Resting: an agent never called in the window is under-used
     /// </summary>
     [Fact]
     public void RestingAgentWithoutPeriodIsUnderUsed()
     {
         // Checking the rule on an empty list
-        AgentStateRules.IsUnderUsed(new List<ActivityPeriod>(), Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(new List<ActivityPeriod>(), Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -187,7 +351,7 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Work(TimeSpan.FromDays(7), TimeSpan.Zero) };
 
         // Checking that the rule answers: one week of work is nothing against two thousand years
-        AgentStateRules.IsUnderUsed(periods, Now(), settings).ShouldBeTrue();
+        UnderUsed(periods, Now(), settings).ShouldBeTrue();
     }
 
     /// <summary>
@@ -200,7 +364,7 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Work(TimeSpan.FromDays(9), TimeSpan.FromDays(8)) };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -213,7 +377,7 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Work(TimeSpan.FromDays(7), TimeSpan.Zero) };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeFalse();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeFalse();
     }
 
     /// <summary>
@@ -226,7 +390,7 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Work(TimeSpan.FromHours(2), TimeSpan.Zero) };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -242,7 +406,7 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Period(kind, TenPercentOfTheWeek(), TimeSpan.Zero) };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -261,7 +425,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeFalse();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeFalse();
     }
 
     /// <summary>
@@ -277,7 +441,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -295,9 +459,9 @@ public sealed class UnderUsedTests
         }
 
         // Checking the rule on the limit, then with one more second of work
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
         periods.Add(Work(TimeSpan.FromDays(6) + TimeSpan.FromSeconds(1), TimeSpan.FromDays(6)));
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeFalse();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeFalse();
     }
 
     /// <summary>
@@ -310,7 +474,7 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Wait(TimeSpan.FromHours(20), TimeSpan.Zero) };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeFalse();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeFalse();
     }
 
     /// <summary>
@@ -324,9 +488,9 @@ public sealed class UnderUsedTests
         ActivityPeriod waiting = Wait(TimeSpan.FromHours(10), TimeSpan.Zero);
 
         // Checking the rule on each period alone, then on both
-        AgentStateRules.IsUnderUsed(new List<ActivityPeriod> { work }, Now(), StateSettings.Default).ShouldBeTrue();
-        AgentStateRules.IsUnderUsed(new List<ActivityPeriod> { waiting }, Now(), StateSettings.Default).ShouldBeTrue();
-        AgentStateRules.IsUnderUsed(new List<ActivityPeriod> { work, waiting }, Now(), StateSettings.Default).ShouldBeFalse();
+        UnderUsed(new List<ActivityPeriod> { work }, Now(), NinetyPercent()).ShouldBeTrue();
+        UnderUsed(new List<ActivityPeriod> { waiting }, Now(), NinetyPercent()).ShouldBeTrue();
+        UnderUsed(new List<ActivityPeriod> { work, waiting }, Now(), NinetyPercent()).ShouldBeFalse();
     }
 
     /// <summary>
@@ -343,7 +507,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule: 10 hours is 6 % of the week, 20 hours would be 12 %
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -360,7 +524,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -377,7 +541,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule: 15 hours is 8.9 % of the week, 20 hours would be 11.9 %
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -395,7 +559,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule on the limit: any double count would put the agent above it
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -411,7 +575,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule: 12 hours is 7 % of the week, 36 hours would be 21 %
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -427,7 +591,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule: about 88 % of the week is busy
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeFalse();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeFalse();
     }
 
     /// <summary>
@@ -443,7 +607,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule: 10 hours is 6 % of the week, 180 hours would be more than the week
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -459,7 +623,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -472,8 +636,8 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Work(TimeSpan.FromDays(7), TimeSpan.Zero) };
 
         // Checking the rule at the fixed now, then eight days later
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeFalse();
-        AgentStateRules.IsUnderUsed(periods, Now().AddDays(8), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeFalse();
+        UnderUsed(periods, Now().AddDays(8), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -490,7 +654,7 @@ public sealed class UnderUsedTests
         };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeFalse();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeFalse();
     }
 
     /// <summary>
@@ -511,7 +675,7 @@ public sealed class UnderUsedTests
         }
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
     }
 
     /// <summary>
@@ -524,8 +688,8 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Work(TimeSpan.FromHours(13), TimeSpan.Zero) };
 
         // Checking the rule with the default window of seven days, then with a window of one day and a limit of 50 %
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeTrue();
-        AgentStateRules.IsUnderUsed(periods, Now(), Settings(TimeSpan.FromDays(1), 0.5)).ShouldBeFalse();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeTrue();
+        UnderUsed(periods, Now(), Settings(TimeSpan.FromDays(1), 0.5)).ShouldBeFalse();
     }
 
     /// <summary>
@@ -543,8 +707,8 @@ public sealed class UnderUsedTests
         StateSettings settings = Settings(TimeSpan.FromDays(1), 0.5);
 
         // Checking the rule on the limit and just over it
-        AgentStateRules.IsUnderUsed(halfADay, Now(), settings).ShouldBeTrue();
-        AgentStateRules.IsUnderUsed(moreThanHalfADay, Now(), settings).ShouldBeFalse();
+        UnderUsed(halfADay, Now(), settings).ShouldBeTrue();
+        UnderUsed(moreThanHalfADay, Now(), settings).ShouldBeFalse();
     }
 
     /// <summary>
@@ -557,8 +721,8 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Work(TimeSpan.FromMinutes(2016), TimeSpan.Zero) };
 
         // Checking the rule with the default limit of 90 %, then with a limit of 75 %
-        AgentStateRules.IsUnderUsed(periods, Now(), StateSettings.Default).ShouldBeFalse();
-        AgentStateRules.IsUnderUsed(periods, Now(), Settings(TimeSpan.FromDays(7), 0.75)).ShouldBeTrue();
+        UnderUsed(periods, Now(), NinetyPercent()).ShouldBeFalse();
+        UnderUsed(periods, Now(), Settings(TimeSpan.FromDays(7), 0.75)).ShouldBeTrue();
     }
 
     /// <summary>
@@ -571,7 +735,7 @@ public sealed class UnderUsedTests
         List<ActivityPeriod> periods = new List<ActivityPeriod> { Work(TimeSpan.FromDays(7), TimeSpan.Zero) };
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(periods, Now(), Settings(TimeSpan.FromDays(7), 0.0)).ShouldBeTrue();
+        UnderUsed(periods, Now(), Settings(TimeSpan.FromDays(7), 0.0)).ShouldBeTrue();
     }
 
     /// <summary>
@@ -585,8 +749,8 @@ public sealed class UnderUsedTests
         StateSettings settings = Settings(TimeSpan.FromDays(7), 1.0);
 
         // Checking the rule
-        AgentStateRules.IsUnderUsed(new List<ActivityPeriod>(), Now(), settings).ShouldBeTrue();
-        AgentStateRules.IsUnderUsed(oneSecond, Now(), settings).ShouldBeFalse();
+        UnderUsed(new List<ActivityPeriod>(), Now(), settings).ShouldBeTrue();
+        UnderUsed(oneSecond, Now(), settings).ShouldBeFalse();
     }
 
     /// <summary>
@@ -597,7 +761,7 @@ public sealed class UnderUsedTests
     {
         // Checking the rule without list
         ArgumentNullException exception = Should.Throw<ArgumentNullException>(
-            () => AgentStateRules.IsUnderUsed(null!, Now(), StateSettings.Default));
+            () => UnderUsed(null!, Now(), NinetyPercent()));
 
         // Checking the parameter in fault
         exception.ParamName.ShouldBe("periods");
@@ -611,7 +775,7 @@ public sealed class UnderUsedTests
     {
         // Checking the rule with a null period in the list
         ArgumentException exception = Should.Throw<ArgumentException>(
-            () => AgentStateRules.IsUnderUsed(new List<ActivityPeriod> { null! }, Now(), StateSettings.Default));
+            () => UnderUsed(new List<ActivityPeriod> { null! }, Now(), NinetyPercent()));
 
         // Checking the exact type (Should.Throw also accepts a derived type) and the parameter in fault
         exception.ShouldBeOfType<ArgumentException>();
@@ -626,8 +790,8 @@ public sealed class UnderUsedTests
     {
         // Checking the rule with a null period after a valid one
         ArgumentException exception = Should.Throw<ArgumentException>(
-            () => AgentStateRules.IsUnderUsed(
-                new List<ActivityPeriod> { Work(TimeSpan.FromHours(1), TimeSpan.Zero), null! }, Now(), StateSettings.Default));
+            () => UnderUsed(
+                new List<ActivityPeriod> { Work(TimeSpan.FromHours(1), TimeSpan.Zero), null! }, Now(), NinetyPercent()));
 
         // Checking the exact type (Should.Throw also accepts a derived type) and the parameter in fault
         exception.ShouldBeOfType<ArgumentException>();
@@ -643,7 +807,7 @@ public sealed class UnderUsedTests
         // Checking the rule with a "now" that is not in UTC
         DateTimeOffset nonUtcNow = new DateTimeOffset(2026, 10, 30, 14, 0, 0, TimeSpan.FromHours(2));
         ArgumentException exception = Should.Throw<ArgumentException>(
-            () => AgentStateRules.IsUnderUsed(new List<ActivityPeriod>(), nonUtcNow, StateSettings.Default));
+            () => UnderUsed(new List<ActivityPeriod>(), nonUtcNow, NinetyPercent()));
 
         // Checking the exact type (Should.Throw also accepts a derived type) and the parameter in fault
         exception.ShouldBeOfType<ArgumentException>();
@@ -658,7 +822,7 @@ public sealed class UnderUsedTests
     {
         // Checking the rule without settings
         ArgumentNullException exception = Should.Throw<ArgumentNullException>(
-            () => AgentStateRules.IsUnderUsed(new List<ActivityPeriod>(), Now(), null!));
+            () => UnderUsed(new List<ActivityPeriod>(), Now(), null!));
 
         // Checking the parameter in fault
         exception.ParamName.ShouldBe("settings");

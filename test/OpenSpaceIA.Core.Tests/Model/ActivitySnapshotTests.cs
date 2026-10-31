@@ -188,6 +188,55 @@ public sealed class ActivitySnapshotTests
     }
 
     /// <summary>
+    /// A full snapshot keeps the periods of the chief and the problems; the short constructor gives empty lists
+    /// </summary>
+    [Fact]
+    public void ActivitySnapshotKeepsThePeriodsOfTheChiefAndTheProblems()
+    {
+        // Building a full snapshot and a short one
+        ActivityPeriod period = new ActivityPeriod(new Project("/home/dev/projects/alpha"), PeriodKind.Working, UtcDate(), UtcDate().AddMinutes(5));
+        ReadingProblem problem = new ReadingProblem("/invented/sessions/1.json", "invented reason");
+        ActivitySnapshot full = new ActivitySnapshot(
+            CreateMachine(), UtcDate(), new List<Session>(), new List<AgentType>(), new List<AgentRun>(),
+            new List<ActivityPeriod> { period }, new List<ReadingProblem> { problem });
+        ActivitySnapshot shortSnapshot = new ActivitySnapshot(CreateMachine(), UtcDate(), new List<Session>(), new List<AgentType>(), new List<AgentRun>());
+
+        // Checking the lists
+        full.ChiefPeriods.ShouldBe(new List<ActivityPeriod> { period });
+        full.Problems.ShouldBe(new List<ReadingProblem> { problem });
+        shortSnapshot.ChiefPeriods.ShouldBeEmpty();
+        shortSnapshot.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// The periods of the chief and the problems are required, and cannot hold a null element
+    /// </summary>
+    [Fact]
+    public void ActivitySnapshotPeriodsAndProblemsAreChecked()
+    {
+        // Building snapshots with null lists, and with lists that hold null
+        List<Session> sessions = new List<Session>();
+        List<AgentType> agentTypes = new List<AgentType>();
+        List<AgentRun> runs = new List<AgentRun>();
+        ArgumentNullException withoutPeriods = Should.Throw<ArgumentNullException>(
+            () => new ActivitySnapshot(CreateMachine(), UtcDate(), sessions, agentTypes, runs, null!, new List<ReadingProblem>()));
+        ArgumentNullException withoutProblems = Should.Throw<ArgumentNullException>(
+            () => new ActivitySnapshot(CreateMachine(), UtcDate(), sessions, agentTypes, runs, new List<ActivityPeriod>(), null!));
+        ArgumentException nullPeriod = Should.Throw<ArgumentException>(
+            () => new ActivitySnapshot(CreateMachine(), UtcDate(), sessions, agentTypes, runs, new List<ActivityPeriod> { null! }, new List<ReadingProblem>()));
+        ArgumentException nullProblem = Should.Throw<ArgumentException>(
+            () => new ActivitySnapshot(CreateMachine(), UtcDate(), sessions, agentTypes, runs, new List<ActivityPeriod>(), new List<ReadingProblem> { null! }));
+
+        // Checking the exact types and the parameters in fault
+        withoutPeriods.ParamName.ShouldBe("chiefPeriods");
+        withoutProblems.ParamName.ShouldBe("problems");
+        nullPeriod.ShouldBeOfType<ArgumentException>();
+        nullPeriod.ParamName.ShouldBe("chiefPeriods");
+        nullProblem.ShouldBeOfType<ArgumentException>();
+        nullProblem.ParamName.ShouldBe("problems");
+    }
+
+    /// <summary>
     /// A snapshot where nobody works has three empty lists, which is allowed
     /// </summary>
     [Fact]

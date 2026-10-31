@@ -5,6 +5,7 @@ One folder per project. Each project is created by the version of the roadmap th
 | Project | Module | Contents |
 |---------|--------|----------|
 | `OpenSpaceIA.Core` | Core | The immutable model (`Model/`), the state rules (`States/`) and the read port (`Ports/Read/`); no dependency |
+| `OpenSpaceIA.Reader` | `~/.claude` reader | The folder of Claude Code with the allow-list of the files it may open, and the safe reading of a file; depends on the Core only |
 
 ## Planned modules
 

@@ -43,8 +43,16 @@ One `<pid>.json` per running Claude Code process (the file name is its process I
 | `version`, `kind`, `entrypoint` | strings | Claude Code version; `interactive`; `claude-desktop` (other values not seen) |
 | `peerProtocol`, `peerFeatures`, `hostSessionId`, `pidDomain`, `messagingSocketPath`, `bridgeSessionId` | various | Internal to Claude Code; not needed |
 
-**Not verified:** whether the file is deleted when a session ends normally, and what is left after a crash. The reader
-must therefore treat a file whose process is gone (or whose `procStart` differs) as a closed session.
+**Not verified:** what is left after a crash. The reader must therefore treat a file whose process is gone (or whose
+`procStart` differs) as a closed session.
+
+Measured in 0.4.0 (2026-10-31, Claude Code 2.1.312):
+
+- On Windows, `procStart` is exactly the start of the process as a FILETIME, to the 100 ns (4 live sessions).
+- On Linux (WSL Fedora 44, a session started with `claude -p`), `procStart` is exactly field 22 of `/proc/<pid>/stat`
+  (clock ticks since the boot).
+- The first write of the file has no `status`: it comes about one second later.
+- The file is deleted when the session ends normally.
 
 ## 3. `projects/`: the transcripts
 
@@ -104,9 +112,14 @@ transcript without its description.
 
 ## 4. `agents/`: the agent definitions
 
-One `<name>.md` per user agent, with a front matter of exactly four keys: `name` (same as the file name), `description`,
-`tools` (comma-separated) and `model` (`sonnet`, `opus`…). Built-in agents (`general-purpose`, `Explore`) have no file:
-the application must know them without one. Files such as `*.md.bak-<date>` are not definitions.
+One `<name>.md` per user agent, with a front matter of exactly four keys: `name`, `description`, `tools`
+(comma-separated) and `model` (`sonnet`, `opus`…). Built-in agents (`general-purpose`, `Explore`) have no file: the
+application must know them without one. Files such as `*.md.bak-<date>` are not definitions.
+
+Corrected in 0.4.0, from the Claude Code documentation ("Create custom subagents"): the agent is identified by its `name`,
+and the file name does not have to match it (here, they are the same). Only `name` and `description` are required; a
+file without `name` is skipped. A name has at most 256 characters and no colon. Claude Code also reads the subfolders of
+`agents/`; when two files give the same name, it keeps one of them in an order it does not document.
 
 ## 5. Task lists
 

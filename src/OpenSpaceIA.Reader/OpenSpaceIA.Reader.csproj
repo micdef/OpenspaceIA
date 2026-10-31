@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Reader: the adapter that reads the files of Claude Code in ~/.claude, read only. It depends on the Core only
+       (checked by the architecture tests). Its types stay internal: only the adapter of the read port will be public. -->
+
+  <!-- Projects -->
+  <ItemGroup>
+    <ProjectReference Include="..\OpenSpaceIA.Core\OpenSpaceIA.Core.csproj" />
+  </ItemGroup>
+
+  <!-- The tests of the Reader may use its internal types -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="OpenSpaceIA.Reader.Tests" />
+  </ItemGroup>
+
+</Project>

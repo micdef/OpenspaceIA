@@ -1,0 +1,261 @@
+/*
+ *	@file	src/OpenSpaceIA.Reader/AgentDefinitionReader.cs
+ *	@author	Defraene Michaël (AKA Sonic) (co-written by Claude)
+ *
+ *	@brief	Reading of the agent definitions of Claude Code
+ */
+
+// Using
+using OpenSpaceIA.Core.Model;
+
+// Static using
+// #N/A
+
+// Named using
+// #N/A
+
+// Namespace
+namespace OpenSpaceIA.Reader;
+
+/// <summary>
+/// Service used to read the agent definitions of the user, in the folder <c>agents</c> of Claude Code
+/// </summary>
+/// <remarks>
+/// <para><b>Purpose:</b> gives the core one agent type per definition of the user (doc/analyse/roadmap.md, 0.4.0). The
+/// built-in agents (Explore, Plan…) have no file: they are known from their runs, not from here.</para>
+/// <para><b>Behavior:</b> lists the agents folder and its subfolders, as Claude Code does: each folder in the ordinal order
+/// of its names, a subfolder read at the place of its name (the listing reads names only), down to 32 levels. The agents
+/// folder or a subfolder that is a junction, a symbolic link or another reparse point is not followed, and it is reported:
+/// it could lead out of the folder of Claude Code, or into a loop. A deeper subfolder is reported and not read. Each
+/// <c>.md</c> file is read with <see cref="ClaudeFileReader"/>, so that the allow-list, the links and the size limit apply to
+/// every file read; a file with another extension (a backup <c>.md.bak-…</c>, a note) is not a definition and is left out
+/// without a problem, except an extension <c>.md</c> written in another case, which is reported. A file that cannot be read
+/// or parsed is reported and does not stop the others. Two definitions with the same name: the first one in the order of the
+/// reading is kept and the other is reported (Claude Code keeps one of them in an order it does not document). When nothing
+/// exists at the place of the agents folder, there is no agent and no problem, since a user may have no agent of their own
+/// (a missing folder of Claude Code is the concern of the reading of the activity); anything else that cannot be listed (a
+/// file, a link to a missing target, a refused access) is reported. Known limit: a named pipe called <c>x.md</c> would block
+/// the reading (creating one needs the right to write in the folder). Nothing is ever written.</para>
+/// </remarks>
+internal sealed class AgentDefinitionReader
+{
+    #region Members
+
+    #region Constants
+
+    /// <summary>
+    /// Name of the folder of the definitions, in the folder of Claude Code
+    /// </summary>
+    private const string AgentsFolderName = "agents";
+
+    /// <summary>
+    /// Extension of a definition
+    /// </summary>
+    private const string DefinitionExtension = ".md";
+
+    /// <summary>
+    /// Deepest level of subfolders read below the agents folder: far above a real tree, and low enough that the reading
+    /// never runs out of stack
+    /// </summary>
+    private const int MaximumDepth = 32;
+
+    #endregion
+
+    #region Variables
+
+    /// <summary>
+    /// Reader of the files of Claude Code
+    /// </summary>
+    private readonly ClaudeFileReader _fileReader;
+
+    #endregion
+
+    #region Delegates
+
+    // #N/A
+
+    #endregion
+
+    #endregion
+
+    #region Enumerations
+
+    // #N/A
+
+    #endregion
+
+    #region Services
+
+    // #N/A
+
+    #endregion
+
+    #region Accessors/Properties
+
+    #region Members & Properties
+
+    // #N/A
+
+    #endregion
+
+    #region Delegates
+
+    // #N/A
+
+    #endregion
+
+    #endregion
+
+    #region Constructors
+
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <param name="fileReader">[Cannot be null] Reader of the files of Claude Code</param>
+    /// <exception cref="ArgumentNullException">If the reader of the files is null</exception>
+    public AgentDefinitionReader(ClaudeFileReader fileReader)
+    {
+        // Check
+        if (fileReader is null)
+            throw new ArgumentNullException(nameof(fileReader), $"The value of the parameter: {nameof(fileReader)} cannot be null");
+
+        // Setting the value
+        _fileReader = fileReader;
+    }
+
+    #endregion
+
+    #region Destructors
+
+    // #N/A
+
+    #endregion
+
+    #region Methods
+
+    #region Privates
+
+    /// <summary>
+    /// Method used to read the definitions of a folder, and of its subfolders at the place of their names
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Purpose:</b> reads the tree of the definitions as Claude Code does, without ever following a link, and without
+    /// ever running out of stack.</para>
+    /// <para><b>Behavior:</b> the path of each entry is built from the folder and the name of the entry, since the system may
+    /// give an empty full path for an entry whose path is too long. An entry whose attributes the system cannot give is
+    /// reported; a subfolder that is a link is reported and not followed; a subfolder deeper than the limit is reported and
+    /// not read.</para>
+    /// </remarks>
+    /// <param name="folder">[Cannot be null] Full path of the agents folder or of one of its subfolders</param>
+    /// <param name="depth">Level of the folder: 0 for the agents folder</param>
+    /// <param name="agentTypes">[Cannot be null] Agent types read, where the new ones are added</param>
+    /// <param name="filesByName">[Cannot be null] File of each name already read, to find a second definition of a name</param>
+    /// <param name="problems">[Cannot be null] Problems, where every file or folder left out is added</param>
+    private void ReadFolder(string folder, int depth, List<AgentType> agentTypes, Dictionary<string, string> filesByName, List<ReadProblem> problems)
+    {
+        foreach (FileSystemInfo entry in FolderListing.ListEntries(folder, problems))
+        {
+            // Reporting an entry whose attributes the system cannot give (a path longer than the system accepts)
+            string entryPath = Path.Join(folder, entry.Name);
+            if ((int)entry.Attributes == -1)
+            {
+                problems.Add(new ReadProblem(entryPath, "The system cannot give the attributes of the entry (its path may be too long): it is not read"));
+                continue;
+            }
+
+            // Reporting a link to a folder, which is not followed: it could lead out of the folder of Claude Code, or into a loop
+            if (entry is DirectoryInfo && FolderListing.IsLink(entry.Attributes))
+            {
+                problems.Add(new ReadProblem(entryPath, "The subfolder is a junction, a symbolic link or another reparse point: it is not followed, so the definitions it leads to are not read"));
+                continue;
+            }
+
+            // Reading a subfolder at the place of its name, unless it is deeper than the limit
+            if (entry is DirectoryInfo)
+            {
+                if (depth >= MaximumDepth)
+                    problems.Add(new ReadProblem(entryPath, $"The subfolder is deeper than {MaximumDepth} levels below the agents folder: it is not read"));
+                else
+                    ReadFolder(entryPath, depth + 1, agentTypes, filesByName, problems);
+                continue;
+            }
+
+            // Leaving out a file that is not a definition, and reporting an extension written in another case
+            if (!string.Equals(entry.Extension, DefinitionExtension, StringComparison.Ordinal))
+            {
+                if (string.Equals(entry.Extension, DefinitionExtension, StringComparison.OrdinalIgnoreCase))
+                    problems.Add(new ReadProblem(entryPath, $"The extension is not written {DefinitionExtension} in lowercase: the file is not read"));
+                continue;
+            }
+
+            // Reading the file, and reporting a failure
+            FileReadResult result = _fileReader.ReadText(entryPath);
+            if (!result.IsSuccess)
+            {
+                problems.Add(new ReadProblem(entryPath, $"The definition cannot be read ({result.Failure}): {result.Detail}"));
+                continue;
+            }
+
+            // Parsing the definition, whose problems are added by the parser
+            AgentType? agentType = AgentDefinitionParser.Parse(entryPath, result.Content!, problems);
+            if (agentType is null)
+                continue;
+
+            // Keeping the first definition of a name, and reporting the others
+            if (filesByName.TryGetValue(agentType.Name, out string? firstFile))
+            {
+                problems.Add(new ReadProblem(entryPath, $"The name: {agentType.Name} is already defined by {firstFile}: this definition is left out"));
+                continue;
+            }
+
+            filesByName.Add(agentType.Name, entryPath);
+            agentTypes.Add(agentType);
+        }
+    }
+
+    #endregion
+
+    #region Publics
+
+    /// <summary>
+    /// Method used to read every agent definition of the user
+    /// </summary>
+    /// <returns>The agent types read, and the problems met</returns>
+    public AgentDefinitions Read()
+    {
+        // Reading the agents folder and its subfolders
+        List<AgentType> agentTypes = new List<AgentType>();
+        List<ReadProblem> problems = new List<ReadProblem>();
+        Dictionary<string, string> filesByName = new Dictionary<string, string>(StringComparer.Ordinal);
+        string agentsFolder = Path.Combine(_fileReader.Folder.RootPath, AgentsFolderName);
+
+        // Refusing an agents folder that is a link: walking it would follow the tree it leads to, perhaps the whole disk
+        if (FolderListing.IsLinkedFolder(agentsFolder))
+            problems.Add(new ReadProblem(agentsFolder, "The agents folder is a junction, a symbolic link or another reparse point: it is not followed, so no definition is read"));
+        else
+            ReadFolder(agentsFolder, 0, agentTypes, filesByName, problems);
+
+        // Function's return
+        return new AgentDefinitions(agentTypes, problems);
+    }
+
+    #endregion
+
+    #endregion
+
+    #region Overrides
+
+    #region Methods
+
+    // #N/A
+
+    #endregion
+
+    #region Operators
+
+    // #N/A
+
+    #endregion
+
+    #endregion
+}
