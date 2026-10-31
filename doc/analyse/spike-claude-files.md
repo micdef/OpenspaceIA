@@ -43,8 +43,16 @@ One `<pid>.json` per running Claude Code process (the file name is its process I
 | `version`, `kind`, `entrypoint` | strings | Claude Code version; `interactive`; `claude-desktop` (other values not seen) |
 | `peerProtocol`, `peerFeatures`, `hostSessionId`, `pidDomain`, `messagingSocketPath`, `bridgeSessionId` | various | Internal to Claude Code; not needed |
 
-**Not verified:** whether the file is deleted when a session ends normally, and what is left after a crash. The reader
-must therefore treat a file whose process is gone (or whose `procStart` differs) as a closed session.
+**Not verified:** what is left after a crash. The reader must therefore treat a file whose process is gone (or whose
+`procStart` differs) as a closed session.
+
+Measured in 0.4.0 (2026-10-31, Claude Code 2.1.312):
+
+- On Windows, `procStart` is exactly the start of the process as a FILETIME, to the 100 ns (4 live sessions).
+- On Linux (WSL Fedora 44, a session started with `claude -p`), `procStart` is exactly field 22 of `/proc/<pid>/stat`
+  (clock ticks since the boot).
+- The first write of the file has no `status`: it comes about one second later.
+- The file is deleted when the session ends normally.
 
 ## 3. `projects/`: the transcripts
 

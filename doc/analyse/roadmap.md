@@ -82,10 +82,10 @@ A modular monolith, with a light hexagonal architecture (ports and adapters) ins
 
 #### 0.4.0 — The reader of `~/.claude`
 
-- **Content**: the Reader project with invented fixtures; a tolerant reading: an unknown or unreadable line is skipped and logged, never an exception that goes up; agent definitions; sessions and sub-agents turned into observations for the rules; the waiting signal (or its fallback) from 0.2.0; files opened with full sharing so that Claude Code is never disturbed.
+- **Content**: the Reader project with invented fixtures; a tolerant reading: an unknown or unreadable line is skipped and reported in the result (the host writes the logs), never an exception that goes up; agent definitions; sessions and sub-agents turned into observations for the rules; the waiting signal (or its fallback) from 0.2.0; files opened with full sharing so that Claude Code is never disturbed.
 - **Done**: a local test, skipped in the CI, shows the real state of your agents; a missing, broken or locked file never stops the reader; the thresholds of "overloaded" are calibrated on a real week of your activity, and their defaults changed in `state-definitions.md` if needed.
 - **Tests**: written first (Kenobi), reviewed by Boba Fett; truncated files, encodings, a very large file (stream reading); the reader creates and writes nothing (test on a read-only folder); it only returns what the core needs.
-- **Branches**, in order: `feature/reader-project`, then `feature/reader-agents` and `feature/reader-activity` (in parallel), then `feature/reader-waiting-signal`, then `test/reader-local-smoke`.
+- **Branches**, in order: `feature/reader-project`, then `feature/reader-agents` and `feature/reader-activity` (in parallel; the activity is split into `feature/reader-sessions` and `feature/reader-runs`), then `feature/reader-waiting-signal`, then `test/reader-local-smoke`.
 
 ### Block 2 — The desktop application, read
 
