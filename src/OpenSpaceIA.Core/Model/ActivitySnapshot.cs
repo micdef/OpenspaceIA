@@ -18,7 +18,8 @@
 namespace OpenSpaceIA.Core.Model;
 
 /// <summary>
-/// The activity of one machine at a given moment: its sessions, its agent types and the runs of its sub-agents
+/// The activity of one machine at a given moment: its sessions, its agent types, the runs of its sub-agents, the periods of
+/// its chief, and the problems met while it was read
 /// </summary>
 /// <remarks>
 /// <para><b>Purpose:</b> what a reader gives to the core; the screens and the state rules work on it.</para>
@@ -91,6 +92,17 @@ public sealed record ActivitySnapshot
     /// </summary>
     public IReadOnlyList<AgentRun> Runs { get; }
 
+    /// <summary>
+    /// Periods of work and of waiting of the chief over the window of history, read only; those of an agent type come from
+    /// its runs
+    /// </summary>
+    public IReadOnlyList<ActivityPeriod> ChiefPeriods { get; }
+
+    /// <summary>
+    /// Problems met while the activity was read, read only
+    /// </summary>
+    public IReadOnlyList<ReadingProblem> Problems { get; }
+
     #endregion
 
     #region Delegates
@@ -104,7 +116,7 @@ public sealed record ActivitySnapshot
     #region Constructors
 
     /// <summary>
-    /// Constructor
+    /// Constructor of a snapshot without periods of the chief and without problems
     /// </summary>
     /// <param name="machine">[Cannot be null] Machine whose activity it is</param>
     /// <param name="takenAtUtc">Time the activity was read, in UTC</param>
@@ -115,6 +127,25 @@ public sealed record ActivitySnapshot
     /// <exception cref="ArgumentException">If the time is not in UTC, or if a list contains a null element</exception>
     public ActivitySnapshot(Machine machine, DateTimeOffset takenAtUtc, IReadOnlyList<Session> sessions,
         IReadOnlyList<AgentType> agentTypes, IReadOnlyList<AgentRun> runs)
+        : this(machine, takenAtUtc, sessions, agentTypes, runs, Array.Empty<ActivityPeriod>(), Array.Empty<ReadingProblem>())
+    {
+    }
+
+    /// <summary>
+    /// Constructor
+    /// </summary>
+    /// <param name="machine">[Cannot be null] Machine whose activity it is</param>
+    /// <param name="takenAtUtc">Time the activity was read, in UTC</param>
+    /// <param name="sessions">[Cannot be null] Open main sessions</param>
+    /// <param name="agentTypes">[Cannot be null] Known agent types</param>
+    /// <param name="runs">[Cannot be null] Runs of the sub-agents</param>
+    /// <param name="chiefPeriods">[Cannot be null] Periods of work and of waiting of the chief</param>
+    /// <param name="problems">[Cannot be null] Problems met while the activity was read</param>
+    /// <exception cref="ArgumentNullException">If the machine or a list is null</exception>
+    /// <exception cref="ArgumentException">If the time is not in UTC, or if a list contains a null element</exception>
+    public ActivitySnapshot(Machine machine, DateTimeOffset takenAtUtc, IReadOnlyList<Session> sessions,
+        IReadOnlyList<AgentType> agentTypes, IReadOnlyList<AgentRun> runs, IReadOnlyList<ActivityPeriod> chiefPeriods,
+        IReadOnlyList<ReadingProblem> problems)
     {
         // Setting the values
         Machine = ModelGuard.RequireNotNull(machine, nameof(machine));
@@ -122,6 +153,8 @@ public sealed record ActivitySnapshot
         Sessions = ModelGuard.CopyWithoutNull(sessions, nameof(sessions));
         AgentTypes = ModelGuard.CopyWithoutNull(agentTypes, nameof(agentTypes));
         Runs = ModelGuard.CopyWithoutNull(runs, nameof(runs));
+        ChiefPeriods = ModelGuard.CopyWithoutNull(chiefPeriods, nameof(chiefPeriods));
+        Problems = ModelGuard.CopyWithoutNull(problems, nameof(problems));
     }
 
     #endregion

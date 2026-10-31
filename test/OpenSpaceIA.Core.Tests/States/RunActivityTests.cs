@@ -1,5 +1,5 @@
 /*
- *	@file	test/OpenSpaceIA.Reader.Tests/RunActivityTests.cs
+ *	@file	test/OpenSpaceIA.Core.Tests/States/RunActivityTests.cs
  *	@author	Defraene Michaël (AKA Sonic) (co-written by Claude)
  *
  *	@brief	Tests of what the runs give to the state rules: periods of work and agent types
@@ -7,6 +7,7 @@
 
 // Using
 using OpenSpaceIA.Core.Model;
+using OpenSpaceIA.Core.States;
 
 // Static using
 // #N/A
@@ -15,7 +16,7 @@ using OpenSpaceIA.Core.Model;
 // #N/A
 
 // Namespace
-namespace OpenSpaceIA.Reader.Tests;
+namespace OpenSpaceIA.Core.Tests.States;
 
 /// <summary>
 /// Tests of what the runs give to the state rules: periods of work and agent types

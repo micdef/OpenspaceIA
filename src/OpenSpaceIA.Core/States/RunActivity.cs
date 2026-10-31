@@ -1,5 +1,5 @@
 /*
- *	@file	src/OpenSpaceIA.Reader/RunActivity.cs
+ *	@file	src/OpenSpaceIA.Core/States/RunActivity.cs
  *	@author	Defraene Michaël (AKA Sonic) (co-written by Claude)
  *
  *	@brief	What the sub-agent runs give to the state rules: periods of work and agent types
@@ -15,7 +15,7 @@ using OpenSpaceIA.Core.Model;
 // #N/A
 
 // Namespace
-namespace OpenSpaceIA.Reader;
+namespace OpenSpaceIA.Core.States;
 
 /// <summary>
 /// Service used to turn the sub-agent runs into what the state rules need: periods of work and agent types
@@ -25,9 +25,10 @@ namespace OpenSpaceIA.Reader;
 /// its runs (doc/analyse/state-definitions.md, § 5); and an agent that has no definition of the user (a built-in agent such
 /// as Explore, an agent of a plugin) still gets a desk when it runs (decision of Michaël, 2026-10-31).</para>
 /// <para><b>Behavior:</b> pure: nothing is read or written. The names of the agent types are compared with their case, as
-/// Claude Code does. Overlapping periods are kept as they are: the state rules merge them.</para>
+/// Claude Code does. Overlapping periods are kept as they are: the state rules merge them. In the core since 0.4.0, so that
+/// every reader and every screen gets the periods of an agent type from its runs in the same way.</para>
 /// </remarks>
-internal static class RunActivity
+public static class RunActivity
 {
     #region Members
 
