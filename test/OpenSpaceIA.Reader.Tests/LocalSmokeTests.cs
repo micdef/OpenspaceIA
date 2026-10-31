@@ -180,7 +180,7 @@ public sealed class LocalSmokeTests
             Report($"  {session.Project.Name}: {session.Status}{(session.WaitReason is null ? string.Empty : $" ({session.WaitReason})")} -> {AgentStateRules.GetChiefState(session)}");
         Report($"  periods of the window: work {Hours(snapshot.ChiefPeriods.Where(period => period.Kind == PeriodKind.Working))} h, "
             + $"waiting {Hours(snapshot.ChiefPeriods.Where(period => period.Kind == PeriodKind.Waiting))} h; "
-            + $"overloaded {AgentStateRules.IsOverloaded(snapshot.ChiefPeriods, nowUtc, settings)}, under-used {AgentStateRules.IsUnderUsed(snapshot.ChiefPeriods, nowUtc, settings)}");
+            + $"overloaded {AgentStateRules.IsOverloaded(snapshot.ChiefPeriods, nowUtc, settings)} (under-used does not apply to the chief)");
 
         // Writing each agent type and its state
         Report($"Agent types: {snapshot.AgentTypes.Count}, runs of the window: {snapshot.Runs.Count} ({snapshot.Runs.Count(run => !run.IsFinished)} in progress)");
@@ -188,7 +188,7 @@ public sealed class LocalSmokeTests
         {
             IReadOnlyList<ActivityPeriod> periods = RunActivity.GetPeriods(agentType.Name, snapshot.Runs);
             Report($"  {agentType.Name}: {periods.Count} run(s), {Hours(periods)} h -> {AgentStateRules.GetAgentTypeState(agentType, snapshot.Runs)}; "
-                + $"overloaded {AgentStateRules.IsOverloaded(periods, nowUtc, settings)}, under-used {AgentStateRules.IsUnderUsed(periods, nowUtc, settings)}");
+                + $"overloaded {AgentStateRules.IsOverloaded(periods, nowUtc, settings)}, under-used {AgentStateRules.IsUnderUsed(periods, snapshot.ChiefPeriods, nowUtc, settings)}");
         }
 
         // Writing the problems, grouped by kind
