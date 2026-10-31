@@ -18,6 +18,19 @@ The tests run on **Microsoft.Testing.Platform** (MTP), selected in `global.json`
 | .NET CLI, one test project | `dotnet test --project test/<project>` |
 | Visual Studio | Test Explorer |
 
+## The local smoke test
+
+`LocalSmokeTests` reads the real folder of Claude Code of the user (`~/.claude`) and writes a report: the sessions of the
+chief and their state, each agent type with its runs and its state, the periods of the chief, the problems grouped by kind,
+and the times. It writes no content of a file and writes nothing on the disk.
+
+It is an **explicit** test: a normal run of the tests (and the CI) skips it, so that the files of the user are never read
+without asking. To run it, alone, with its report:
+
+```
+dotnet test --project test/OpenSpaceIA.Reader.Tests -c Release --output detailed -- --explicit only --filter-class "OpenSpaceIA.Reader.Tests.LocalSmokeTests"
+```
+
 ## Conventions
 
 - A test project is named after the project it tests, followed by `.Tests`.
