@@ -345,8 +345,11 @@ public sealed class AgentDefinitionReaderTests : IDisposable
         }
         finally
         {
-            // Removing the link itself
-            new DirectoryInfo(agents).Delete();
+            // Removing the link itself: a junction is removed as a folder, a symbolic link of Linux as a file
+            if (OperatingSystem.IsWindows())
+                Directory.Delete(agents);
+            else
+                File.Delete(agents);
         }
     }
 
