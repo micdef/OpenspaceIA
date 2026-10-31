@@ -318,6 +318,70 @@ public sealed class ChiefPeriodReaderTests : IDisposable
     }
 
     /// <summary>
+    /// A session resumed in a new transcript copies the history of the old one: the same period is kept once
+    /// </summary>
+    [Fact]
+    public void SamePeriodInTwoTranscriptsIsKeptOnce()
+    {
+        // Writing the same turn in two transcripts, and a turn of its own in the second one
+        WriteText(Path.Combine("projects", "C--a", "s1.jsonl"), Turn(0, 5));
+        WriteText(Path.Combine("projects", "C--a", "s2.jsonl"), Turn(0, 5) + Turn(10, 12));
+
+        // Reading the periods
+        ChiefPeriods periods = new ChiefPeriodReader(_fileReader).Read(_sinceUtc, _nowUtc);
+
+        // Checking that the copy is kept once
+        Describe(periods).ShouldBe("0-5, 10-12");
+    }
+
+    /// <summary>
+    /// The lines longer than the limit are reported with the others that cannot be read
+    /// </summary>
+    [Fact]
+    public void LinesTooLongAreReported()
+    {
+        // Writing a turn and a line longer than the limit of a small reader
+        string transcript = WriteText(Path.Combine("projects", "C--a", "s1.jsonl"), new string('x', 2000) + "\n" + Turn(0, 5));
+        ClaudeFileReader smallReader = new ClaudeFileReader(new ClaudeFolder(_root), 1048576, 1000);
+
+        // Reading the periods
+        ChiefPeriods periods = new ChiefPeriodReader(smallReader).Read(_sinceUtc, _nowUtc);
+
+        // Checking the period and the problem
+        Describe(periods).ShouldBe("0-5");
+        periods.Problems.Single().FilePath.ShouldBe(transcript);
+        periods.Problems.Single().Reason.ShouldContain("1 longer than the limit");
+    }
+
+    /// <summary>
+    /// A transcript that cannot be read keeps the periods read before, is reported, and is read again cleanly next time
+    /// </summary>
+    [Fact]
+    public void UnreadableTranscriptKeepsThePeriodsReadBefore()
+    {
+        // Skipping where the exclusive lock is not enforced
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "The exclusive lock of FileShare.None is reliable on Windows only");
+
+        // Writing a transcript, reading it once, then adding a turn
+        string transcript = WriteText(Path.Combine("projects", "C--a", "s1.jsonl"), Turn(0, 5));
+        ChiefPeriodReader reader = new ChiefPeriodReader(_fileReader);
+        reader.Read(_sinceUtc, _nowUtc);
+        File.AppendAllText(transcript, Turn(10, 12));
+
+        // Reading while the transcript is locked, then once it is free
+        ChiefPeriods locked;
+        using (FileStream locker = new FileStream(transcript, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            locked = reader.Read(_sinceUtc, _nowUtc);
+        ChiefPeriods free = reader.Read(_sinceUtc, _nowUtc);
+
+        // Checking the periods kept and the problem, then the whole transcript
+        Describe(locked).ShouldBe("0-5");
+        locked.Problems.Single().Reason.ShouldContain(nameof(FileReadFailure.Unreadable));
+        Describe(free).ShouldBe("0-5, 10-12");
+        free.Problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
     /// A record dated more than five minutes after now is not read
     /// </summary>
     [Fact]

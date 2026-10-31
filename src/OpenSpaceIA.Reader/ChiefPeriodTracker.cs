@@ -25,12 +25,16 @@ namespace OpenSpaceIA.Reader;
 /// <para><b>Purpose:</b> "overloaded" and "under-used" need the periods of the chief over a window
 /// (doc/analyse/state-definitions.md, § 5); they are rebuilt from the transcript, with no storage of our own.</para>
 /// <para><b>Behavior:</b> decisions of Michaël, 2026-10-31. A <b>turn</b> starts with a message of the user (a record of the
-/// user that is not added by Claude Code, <c>isMeta</c>, and that holds no tool result), and ends with a message of the
-/// assistant whose <c>stop_reason</c> is <c>end_turn</c>, or with an interruption by the user (a message that starts with
-/// <c>[Request interrupted by user</c>), at its time; a message of the user inside a turn (typed while Claude works)
-/// continues it. A turn not ended yet lasts up to its last record. A <b>wait</b> is the time from a tool call to its
-/// result when the user decided (the source of the decision is <c>user_temporary</c>, or the refusal is
-/// <c>user-rejected</c>). A turn gives periods of waiting for its waits and periods of work for the rest; a period of zero
+/// user that is not added by Claude Code, <c>isMeta</c>, nor a summary of a compaction, nor the output of a local command,
+/// and that holds no tool result), and ends with a final answer of the assistant (<c>stop_reason</c> <c>end_turn</c>,
+/// <c>stop_sequence</c>, <c>refusal</c> or <c>max_tokens</c>), or with an interruption by the user (a message that starts
+/// with <c>[Request interrupted by user</c>), at its time; a message of the user inside a turn (typed while Claude works)
+/// continues it. A silence of more than 30 minutes inside a turn, without a tool call in progress, ends it at its last
+/// record (a session closed in the middle of a turn). A turn not ended yet lasts up to its last record. The records of a
+/// sub-agent (<c>isSidechain</c>) are left out. A <b>wait</b> is the time from a tool call to its result when the user
+/// decided (the source of the decision is <c>user_temporary</c>, or the refusal is <c>user-rejected</c>); it holds the run of
+/// the tool after the decision, and a wait whose result comes after the end of its turn is lost. A turn gives periods of
+/// waiting for its waits and periods of work for the rest; a period of zero
 /// length is left out. The project of a turn is the last working folder (<c>cwd</c>) given up to its start, or the first one
 /// given in it; a turn without any is left out and counted. A record whose time cannot be read (see
 /// <see cref="TranscriptTime"/>) is counted and changes nothing; a line that is not a JSON object is counted; a blank line is
@@ -50,6 +54,22 @@ internal sealed class ChiefPeriodTracker : ITranscriptFollower
     #endregion
 
     #region Variables
+
+    /// <summary>
+    /// Reasons that end the answer of the assistant, so the turn (every reason but a tool call)
+    /// </summary>
+    private static readonly HashSet<string> _finalStopReasons = new HashSet<string>(StringComparer.Ordinal) { "end_turn", "stop_sequence", "refusal", "max_tokens" };
+
+    /// <summary>
+    /// Starts of the messages that a local command writes, which Claude does not answer
+    /// </summary>
+    private static readonly string[] _localCommandMarkers = new string[] { "<command-name>", "<command-message>", "<command-args>", "<local-command-" };
+
+    /// <summary>
+    /// Longest silence inside a turn without a tool call in progress; a longer one ends the turn at its last record
+    /// (decision of Michaël, 2026-10-31; the longest tool call measured in a turn lasted 17 minutes)
+    /// </summary>
+    private static readonly TimeSpan _silenceLimit = TimeSpan.FromMinutes(30);
 
     /// <summary>
     /// Periods of the turns already ended, in their order
@@ -185,6 +205,21 @@ internal sealed class ChiefPeriodTracker : ITranscriptFollower
     }
 
     /// <summary>
+    /// Method used to know whether a key of an element is true
+    /// </summary>
+    /// <param name="element">JSON object</param>
+    /// <param name="key">[Cannot be null] Key of the boolean</param>
+    /// <returns>
+    /// True  ==> The key is the boolean true<br/>
+    /// False ==> The key is missing, false, or of another kind
+    /// </returns>
+    private static bool IsTrue(JsonElement element, string key)
+    {
+        // Function's return
+        return element.TryGetProperty(key, out JsonElement value) && value.ValueKind == JsonValueKind.True;
+    }
+
+    /// <summary>
     /// Method used to cut a turn into periods of work and of waiting
     /// </summary>
     /// <param name="project">[Cannot be null] Project of the turn</param>
@@ -290,8 +325,8 @@ internal sealed class ChiefPeriodTracker : ITranscriptFollower
     /// <exception cref="InvalidOperationException">If a text holds an escaped half of a character (caught by the caller)</exception>
     private void ApplyUserRecord(JsonElement record, DateTimeOffset time)
     {
-        // Leaving out the messages that Claude Code adds itself
-        if (record.TryGetProperty("isMeta", out JsonElement isMeta) && isMeta.ValueKind == JsonValueKind.True)
+        // Leaving out the messages that Claude Code adds itself, and the summaries of a compaction
+        if (IsTrue(record, "isMeta") || IsTrue(record, "isCompactSummary"))
             return;
 
         // Closing the calls answered, and keeping the waits decided by the user
@@ -310,11 +345,15 @@ internal sealed class ChiefPeriodTracker : ITranscriptFollower
             return;
         }
 
-        // Ending the turn at an interruption, or starting a turn at a message
+        // Ending the turn at an interruption, leaving out a local command, or starting a turn at a message
         if (text.StartsWith(InterruptionMarker, StringComparison.Ordinal))
         {
             if (_turnStart is not null)
                 EndTurn(time);
+        }
+        else if (_localCommandMarkers.Any(marker => text.StartsWith(marker, StringComparison.Ordinal)))
+        {
+            return;
         }
         else if (_turnStart is null)
         {
@@ -345,7 +384,7 @@ internal sealed class ChiefPeriodTracker : ITranscriptFollower
         }
 
         // Ending the turn at the end of the answer
-        if (ReadText(message, "stop_reason") == "end_turn" && _turnStart is not null)
+        if (_turnStart is not null && ReadText(message, "stop_reason") is string stopReason && _finalStopReasons.Contains(stopReason))
             EndTurn(time);
     }
 
@@ -375,7 +414,7 @@ internal sealed class ChiefPeriodTracker : ITranscriptFollower
                 return;
             }
             string? type = ReadText(record, "type");
-            if (type != "user" && type != "assistant")
+            if ((type != "user" && type != "assistant") || IsTrue(record, "isSidechain"))
                 return;
 
             // Reading the time, without which the record cannot be placed
@@ -384,6 +423,10 @@ internal sealed class ChiefPeriodTracker : ITranscriptFollower
                 UnreadableLineCount++;
                 return;
             }
+
+            // Ending a turn silent for too long without a tool call in progress, at its last record
+            if (_turnStart is not null && _openCallTimes.Count == 0 && time - _turnLastRecord > _silenceLimit)
+                EndTurn(_turnLastRecord);
 
             // Keeping the working folder, then applying the record to the turn
             string? workingFolder = ReadText(record, "cwd");

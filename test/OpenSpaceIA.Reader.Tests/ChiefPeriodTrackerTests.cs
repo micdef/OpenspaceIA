@@ -320,6 +320,151 @@ public sealed class ChiefPeriodTrackerTests
     }
 
     /// <summary>
+    /// Every final answer ends the turn, not only end_turn: the time until the next message is not work
+    /// </summary>
+    /// <param name="stopReason">Reason that ends the answer</param>
+    [Theory]
+    [InlineData("stop_sequence")]
+    [InlineData("refusal")]
+    [InlineData("max_tokens")]
+    public void FinalAnswerEndsTheTurn(string stopReason)
+    {
+        // Following a turn ended by the reason, then a message five hours later
+        ChiefPeriodTracker tracker = Follow(Prompt(0), Assistant(5, stopReason), Prompt(300), Assistant(302, "end_turn"));
+
+        // Checking the periods
+        tracker.GetPeriods(_since).ShouldBe(new List<ActivityPeriod>() { Period(PeriodKind.Working, 0, 5), Period(PeriodKind.Working, 300, 302) });
+    }
+
+    /// <summary>
+    /// A silence of more than 30 minutes inside a turn, without a tool call in progress, ends the turn at its last record;
+    /// 30 minutes exactly do not
+    /// </summary>
+    [Fact]
+    public void LongSilenceEndsTheTurnAtItsLastRecord()
+    {
+        // Following an answer without reason of end, a silence of 30 minutes, then one of five hours
+        ChiefPeriodTracker tracker = Follow(
+            Prompt(0),
+            Assistant(5, "null").Replace("\"stop_reason\":\"null\"", "\"stop_reason\":null", StringComparison.Ordinal),
+            Prompt(35, "invented follow-up"),
+            Assistant(36, "tool_use", "t1"),
+            Result(37, "t1"),
+            Prompt(337));
+
+        // Checking the periods: the turn goes on after 30 minutes, and ends at its last record before five hours; the new turn
+        // has a single record, so no period of more than zero yet
+        tracker.GetPeriods(_since).ShouldBe(new List<ActivityPeriod>() { Period(PeriodKind.Working, 0, 37) });
+    }
+
+    /// <summary>
+    /// A long tool call in progress keeps the turn open, whatever the silence
+    /// </summary>
+    [Fact]
+    public void LongToolCallKeepsTheTurn()
+    {
+        // Following a tool that runs for 40 minutes without asking the user
+        ChiefPeriodTracker tracker = Follow(Prompt(0), Assistant(1, "tool_use", "t1"), Result(41, "t1"), Assistant(42, "end_turn"));
+
+        // Checking the period
+        tracker.GetPeriods(_since).ShouldBe(new List<ActivityPeriod>() { Period(PeriodKind.Working, 0, 42) });
+    }
+
+    /// <summary>
+    /// The output of a local command, and a summary of a compaction, do not start a turn
+    /// </summary>
+    /// <param name="kind">Kind of message that does not start a turn</param>
+    [Theory]
+    [InlineData("local command")]
+    [InlineData("local output")]
+    [InlineData("compaction")]
+    public void LocalCommandAndCompactionDoNotStartATurn(string kind)
+    {
+        // Building the message
+        string message = kind switch
+        {
+            "local command" => Prompt(0, "<command-name>/clear</command-name>"),
+            "local output" => Prompt(0, "<local-command-stdout>invented</local-command-stdout>"),
+            _ => Prompt(0).Replace("\"type\":\"user\"", "\"type\":\"user\",\"isCompactSummary\":true", StringComparison.Ordinal),
+        };
+
+        // Following it, then a true turn eight hours later
+        ChiefPeriodTracker tracker = Follow(message, Prompt(500), Assistant(502, "end_turn"));
+
+        // Checking the period
+        tracker.GetPeriods(_since).ShouldBe(new List<ActivityPeriod>() { Period(PeriodKind.Working, 500, 502) });
+    }
+
+    /// <summary>
+    /// The records of a sub-agent do not change the turn of the chief
+    /// </summary>
+    [Fact]
+    public void RecordsOfASubAgentAreLeftOut()
+    {
+        // Following a turn with an end of answer of a sub-agent in its middle
+        ChiefPeriodTracker tracker = Follow(
+            Prompt(0),
+            Assistant(2, "end_turn").Replace("\"type\":\"assistant\"", "\"type\":\"assistant\",\"isSidechain\":true", StringComparison.Ordinal),
+            Assistant(6, "end_turn"));
+
+        // Checking the period
+        tracker.GetPeriods(_since).ShouldBe(new List<ActivityPeriod>() { Period(PeriodKind.Working, 0, 6) });
+    }
+
+    /// <summary>
+    /// An end of turn dated before the start of the turn gives no period and no exception
+    /// </summary>
+    [Fact]
+    public void EndBeforeTheStartGivesNoPeriod()
+    {
+        // Following a turn whose end is dated before its start
+        ChiefPeriodTracker tracker = Should.NotThrow(() => Follow(Prompt(10), Assistant(5, "end_turn")));
+
+        // Checking that there is no period
+        tracker.GetPeriods(_since).ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// The marker of an interruption ends the turn only at the start of the message
+    /// </summary>
+    [Fact]
+    public void MarkerOfAnInterruptionCountsOnlyAtTheStart()
+    {
+        // Following a message that quotes the marker in its middle
+        ChiefPeriodTracker tracker = Follow(Prompt(0), Prompt(2, "see [Request interrupted by user] above"), Assistant(6, "end_turn"));
+
+        // Checking the period
+        tracker.GetPeriods(_since).ShouldBe(new List<ActivityPeriod>() { Period(PeriodKind.Working, 0, 6) });
+    }
+
+    /// <summary>
+    /// A decision of the user outside a turn gives no wait
+    /// </summary>
+    [Fact]
+    public void DecisionOutsideATurnIsNotAWait()
+    {
+        // Following a call and its result decided by the user, with no turn open
+        ChiefPeriodTracker tracker = Follow(Assistant(0, "tool_use", "t1"), Result(4, "t1", "user_temporary"));
+
+        // Checking that there is no period
+        tracker.GetPeriods(_since).ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A working folder that is not a full path does not give the project
+    /// </summary>
+    [Fact]
+    public void RelativeWorkingFolderGivesNoProject()
+    {
+        // Following a turn whose working folder is relative
+        ChiefPeriodTracker tracker = Follow(Prompt(0).Replace(_workingFolder.Replace("\\", "\\\\", StringComparison.Ordinal), "relative", StringComparison.Ordinal), Assistant(3, "end_turn"));
+
+        // Checking that the turn has no project
+        tracker.GetPeriods(_since).ShouldBeEmpty();
+        tracker.TurnWithoutProjectCount.ShouldBe(1);
+    }
+
+    /// <summary>
     /// A turn not ended yet is a period up to its last record
     /// </summary>
     [Fact]

@@ -31,7 +31,9 @@ namespace OpenSpaceIA.Reader;
 /// stopped; a record dated more than five minutes after now is not read. A transcript that cannot be read keeps the periods
 /// read before and is reported, and its cursor is forgotten, so that the next reading starts again cleanly. The lines that
 /// cannot be read so far, and the turns without project, are reported in one problem each per transcript and per reading.
-/// The cursors of the transcripts not seen this time are forgotten. Nothing is ever written. One instance is not meant to be
+/// A session resumed in a new transcript copies the history of the old one: the same period (same project, kind, start and
+/// end) is kept once. The cursors of the transcripts not seen this time are forgotten. Nothing is ever written. One instance
+/// is not meant to be
 /// used by two threads at the same time.</para>
 /// </remarks>
 internal sealed class ChiefPeriodReader
@@ -238,8 +240,11 @@ internal sealed class ChiefPeriodReader
         foreach (string path in _cursors.Keys.Where(path => !seen.Contains(path)).ToList())
             _cursors.Remove(path);
 
+        // Keeping once a period found in two transcripts (a session resumed in a new transcript copies the old history)
+        List<ActivityPeriod> distinctPeriods = periods.Distinct().ToList();
+
         // Function's return
-        return new ChiefPeriods(periods, problems);
+        return new ChiefPeriods(distinctPeriods, problems);
     }
 
     #endregion

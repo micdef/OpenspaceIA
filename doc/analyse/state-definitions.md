@@ -59,9 +59,10 @@ least 90 % of the time over the last 7 days**.
   and the last record of each run.
 - A **period of waiting** exists only for the chief: the time while it waits for you.
 - Read in the transcripts (decisions of Michaël, 2026-10-31): a **turn** of the chief starts with a message of the user and
-  ends with the end of the answer (`stop_reason` `end_turn`) or with an interruption by the user (`[Request interrupted by
-  user`), at its time; a message typed while Claude works continues the turn, and a turn not ended yet lasts up to its last
-  record. A **wait** is the time from a tool call to its result when the user decided (`user_temporary`, or the refusal
+  ends with a final answer (`stop_reason` `end_turn`, `stop_sequence`, `refusal` or `max_tokens`) or with an interruption
+  by the user (`[Request interrupted by user`), at its time; a message typed while Claude works continues the turn; a local
+  command or a summary of a compaction does not start a turn; a silence of more than 30 minutes inside a turn, without a
+  tool call in progress, ends it at its last record; and a turn not ended yet lasts up to its last record. A **wait** is the time from a tool call to its result when the user decided (`user_temporary`, or the refusal
   `user-rejected`). The periods of work of the chief are its turns minus their waits.
 - The rules receive the periods of an agent, already cut, with their project; they do not know where the periods come from.
   The reader (0.4.0) builds them from the transcripts, with no storage of our own (decision 6 of
