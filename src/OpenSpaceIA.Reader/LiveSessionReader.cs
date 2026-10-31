@@ -26,7 +26,8 @@ namespace OpenSpaceIA.Reader;
 /// <para><b>Behavior:</b> lists the top of the sessions folder in the ordinal order of the names, and reads each
 /// <c>.json</c> file with <see cref="ClaudeFileReader"/>; every other file (the <c>.key</c> files above all) is never
 /// opened. A subfolder is reported and not read. A sessions folder that is a junction, a symbolic link or another reparse
-/// point is reported and not read. Each session is then checked with the <see cref="IProcessProbe"/>: a closed session is
+/// point is reported and not read. A file deleted between the listing and its reading is a session that has just ended
+/// (Claude Code deletes the file at the end of a session): it is left out without a problem. Each session is then checked with the <see cref="IProcessProbe"/>: a closed session is
 /// left out without a problem (its file stays behind after a crash), an alive one is kept, and one whose process cannot be
 /// checked is kept and reported. When nothing exists at the place of the sessions folder, there is no session and no
 /// problem. Nothing is ever written.</para>
@@ -148,7 +149,7 @@ internal sealed class LiveSessionReader
         List<LiveSession> sessions = new List<LiveSession>();
         List<ReadProblem> problems = new List<ReadProblem>();
         string sessionsFolder = Path.Combine(_fileReader.Folder.RootPath, SessionsFolderName);
-        if (Directory.Exists(sessionsFolder) && FolderListing.IsLink(new DirectoryInfo(sessionsFolder).Attributes))
+        if (FolderListing.IsLinkedFolder(sessionsFolder))
         {
             problems.Add(new ReadProblem(sessionsFolder, "The sessions folder is a junction, a symbolic link or another reparse point: it is not followed, so no session is read"));
 
@@ -170,8 +171,10 @@ internal sealed class LiveSessionReader
             if (!string.Equals(entry.Extension, SessionExtension, StringComparison.Ordinal))
                 continue;
 
-            // Reading the file, and reporting a failure
+            // Reading the file, and reporting a failure; a file deleted since the listing is a session that has just ended
             FileReadResult result = _fileReader.ReadText(entryPath);
+            if (result.Failure == FileReadFailure.NotFound)
+                continue;
             if (!result.IsSuccess)
             {
                 problems.Add(new ReadProblem(entryPath, $"The session file cannot be read ({result.Failure}): {result.Detail}"));

@@ -23,7 +23,8 @@ namespace OpenSpaceIA.Reader;
 /// <remarks>
 /// <para><b>Purpose:</b> the way to ask the system differs between Windows and Linux, and the tests need invented processes;
 /// this is the only reason for this port.</para>
-/// <para><b>Behavior:</b> never throws for a process that does not exist or cannot be seen: the answer says so.</para>
+/// <para><b>Behavior:</b> never throws because of the state of a process (missing, ended, hidden): the answer says so; only a
+/// wrong argument throws.</para>
 /// </remarks>
 internal interface IProcessProbe
 {

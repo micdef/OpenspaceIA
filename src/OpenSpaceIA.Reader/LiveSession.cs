@@ -68,7 +68,7 @@ internal sealed record LiveSession
     /// <summary>
     /// Facts read from the session file
     /// </summary>
-    public SessionFile File { get; }
+    public SessionFile Facts { get; }
 
     /// <summary>
     /// Whether the process is known to run (alive), or cannot be checked (unknown)
@@ -90,20 +90,20 @@ internal sealed record LiveSession
     /// <summary>
     /// Constructor
     /// </summary>
-    /// <param name="file">[Cannot be null] Facts read from the session file</param>
+    /// <param name="facts">[Cannot be null] Facts read from the session file</param>
     /// <param name="liveness">Alive or unknown</param>
     /// <exception cref="ArgumentNullException">If the facts are null</exception>
     /// <exception cref="ArgumentOutOfRangeException">If the liveness is closed, or not defined in its enumeration</exception>
-    public LiveSession(SessionFile file, ProcessLiveness liveness)
+    public LiveSession(SessionFile facts, ProcessLiveness liveness)
     {
         // Checks
-        if (file is null)
-            throw new ArgumentNullException(nameof(file), $"The value of the parameter: {nameof(file)} cannot be null");
+        if (facts is null)
+            throw new ArgumentNullException(nameof(facts), $"The value of the parameter: {nameof(facts)} cannot be null");
         if (liveness != ProcessLiveness.Alive && liveness != ProcessLiveness.Unknown)
             throw new ArgumentOutOfRangeException(nameof(liveness), liveness, $"The value of the parameter: {nameof(liveness)} must be alive or unknown");
 
         // Setting the values
-        File = file;
+        Facts = facts;
         Liveness = liveness;
     }
 

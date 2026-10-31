@@ -117,7 +117,7 @@ public sealed class LiveSessionTests
         LiveSession session = new LiveSession(_file, liveness);
 
         // Checking the values
-        session.File.ShouldBe(_file);
+        session.Facts.ShouldBe(_file);
         session.Liveness.ShouldBe(liveness);
     }
 
@@ -148,7 +148,7 @@ public sealed class LiveSessionTests
         ArgumentNullException exception = Should.Throw<ArgumentNullException>(() => new LiveSession(null!, ProcessLiveness.Alive));
 
         // Checking the parameter in fault
-        exception.ParamName.ShouldBe("file");
+        exception.ParamName.ShouldBe("facts");
     }
 
     /// <summary>

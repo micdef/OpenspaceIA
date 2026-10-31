@@ -230,7 +230,7 @@ internal sealed class AgentDefinitionReader
         string agentsFolder = Path.Combine(_fileReader.Folder.RootPath, AgentsFolderName);
 
         // Refusing an agents folder that is a link: walking it would follow the tree it leads to, perhaps the whole disk
-        if (Directory.Exists(agentsFolder) && FolderListing.IsLink(new DirectoryInfo(agentsFolder).Attributes))
+        if (FolderListing.IsLinkedFolder(agentsFolder))
             problems.Add(new ReadProblem(agentsFolder, "The agents folder is a junction, a symbolic link or another reparse point: it is not followed, so no definition is read"));
         else
             ReadFolder(agentsFolder, 0, agentTypes, filesByName, problems);

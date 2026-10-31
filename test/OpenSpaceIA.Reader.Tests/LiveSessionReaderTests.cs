@@ -168,7 +168,7 @@ public sealed class LiveSessionReaderTests : IDisposable
     private static string ProcessIds(LiveSessions sessions)
     {
         // Function's return
-        return string.Join(", ", sessions.Sessions.Select(session => session.File.ProcessId));
+        return string.Join(", ", sessions.Sessions.Select(session => session.Facts.ProcessId));
     }
 
     /// <summary>
@@ -355,6 +355,25 @@ public sealed class LiveSessionReaderTests : IDisposable
         sessions.Problems.Count.ShouldBe(1);
         sessions.Problems[0].FilePath.ShouldBe(large);
         sessions.Problems[0].Reason.ShouldContain(nameof(FileReadFailure.TooLarge));
+    }
+
+    /// <summary>
+    /// A sessions entry that is a file is reported, on every system, instead of being taken for a missing folder
+    /// </summary>
+    [Fact]
+    public void SessionsEntryThatIsAFileIsReported()
+    {
+        // Writing a file at the place of the sessions folder
+        string entry = WriteText("sessions", "invented");
+
+        // Reading the sessions
+        LiveSessions sessions = new LiveSessionReader(_fileReader, _probe).Read();
+
+        // Checking the result
+        sessions.Sessions.ShouldBeEmpty();
+        sessions.Problems.Count.ShouldBe(1);
+        sessions.Problems[0].FilePath.ShouldBe(entry);
+        sessions.Problems[0].Reason.ShouldContain("cannot be listed: it is not a folder");
     }
 
     /// <summary>

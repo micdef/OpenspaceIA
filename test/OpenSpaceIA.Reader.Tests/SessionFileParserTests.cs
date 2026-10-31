@@ -328,6 +328,85 @@ public sealed class SessionFileParserTests
     }
 
     /// <summary>
+    /// An identifier that could not name a file safely (a separator, two dots, a space) is skipped and reported
+    /// </summary>
+    /// <param name="sessionId">Identifier that must be refused</param>
+    [Theory]
+    [InlineData("../other")]
+    [InlineData("a/b")]
+    [InlineData("a\\b")]
+    [InlineData("a b")]
+    [InlineData("a.b")]
+    [InlineData("é")]
+    public void IdentifierThatCannotNameAFileSkipsTheFile(string sessionId)
+    {
+        // Parsing a file with the identifier
+        SessionFile? file = Parse(Json(session => session["sessionId"] = sessionId), out List<ReadProblem> problems);
+
+        // Checking that the file is skipped and reported
+        file.ShouldBeNull();
+        problems.Count.ShouldBe(1);
+        problems[0].Reason.ShouldContain("key: sessionId is missing");
+    }
+
+    /// <summary>
+    /// An identifier like the ones of Claude Code (a GUID), with letters, digits, hyphens and underscores, is read
+    /// </summary>
+    [Fact]
+    public void IdentifierOfLettersDigitsHyphensAndUnderscoresIsRead()
+    {
+        // Parsing a file with a GUID and an underscore
+        SessionFile? file = Parse(Json(session => session["sessionId"] = "03aa7b0f-2e6a-4eca-b924-ea679485446a_X"), out List<ReadProblem> problems);
+
+        // Checking the identifier
+        file.ShouldNotBeNull();
+        file.SessionId.ShouldBe("03aa7b0f-2e6a-4eca-b924-ea679485446a_X");
+        problems.ShouldBeEmpty();
+    }
+
+    /// <summary>
+    /// A text that holds an escaped half of a character skips the file and is reported, instead of throwing
+    /// </summary>
+    /// <param name="key">Key whose text holds the half of a character</param>
+    [Theory]
+    [InlineData("sessionId")]
+    [InlineData("cwd")]
+    [InlineData("procStart")]
+    public void EscapedHalfOfACharacterSkipsTheFile(string key)
+    {
+        // Writing the escape of a lone half of a character, which JSON accepts but which is not a text
+        string text = Json(session => session[key] = "PLACEHOLDER").Replace("PLACEHOLDER", "\\ud800", StringComparison.Ordinal);
+
+        // Parsing the file
+        List<ReadProblem> problems = new List<ReadProblem>();
+        SessionFile? file = Should.NotThrow(() => SessionFileParser.Parse(_filePath, text, problems));
+
+        // Checking that the file is skipped and reported
+        file.ShouldBeNull();
+        problems.Count.ShouldBe(1);
+        problems[0].Reason.ShouldContain("escaped half of a character");
+    }
+
+    /// <summary>
+    /// A status that holds an escaped half of a character is not known: the session is kept and the status is reported
+    /// </summary>
+    [Fact]
+    public void StatusWithAnEscapedHalfOfACharacterIsUnknown()
+    {
+        // Writing the escape of a lone half of a character in the status
+        string text = Json(session => session["status"] = "PLACEHOLDER").Replace("PLACEHOLDER", "\\ud800", StringComparison.Ordinal);
+
+        // Parsing the file
+        SessionFile? file = Parse(text, out List<ReadProblem> problems);
+
+        // Checking that the session is kept with an unknown status
+        file.ShouldNotBeNull();
+        file.Status.ShouldBeNull();
+        problems.Count.ShouldBe(1);
+        problems[0].Reason.ShouldContain("key: status is not a known status");
+    }
+
+    /// <summary>
     /// A file whose start is missing, not a whole number, or out of the range of the dates is skipped and reported
     /// </summary>
     /// <param name="change">Kind of invalid start</param>

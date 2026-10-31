@@ -25,8 +25,9 @@ namespace OpenSpaceIA.Reader;
 /// <remarks>
 /// <para><b>Purpose:</b> keeps the facts the office needs from a session file (doc/analyse/spike-claude-files.md, § 2), and
 /// reports every file that cannot give them instead of guessing.</para>
-/// <para><b>Behavior:</b> the text must be one JSON object. The keys <c>pid</c> (a whole number greater than 0, the same as
-/// the name of the file), <c>sessionId</c> (a text), <c>cwd</c> (a full path on this machine), <c>procStart</c> (a text of
+/// <para><b>Behavior:</b> the text must be one JSON object, whose texts hold whole characters (an escaped half of a character
+/// skips the file). The keys <c>pid</c> (a whole number greater than 0, the same as the name of the file), <c>sessionId</c>
+/// (a text of letters, digits, hyphens and underscores, since it will name a file), <c>cwd</c> (a full path on this machine), <c>procStart</c> (a text of
 /// digits) and <c>startedAt</c> (a whole number of milliseconds since 1970, UTC) are required: when one is missing or
 /// invalid, the file is skipped and reported. The key <c>status</c> is optional: <c>busy</c>, <c>waiting</c> or
 /// <c>idle</c>; a missing status is not a problem (Claude Code writes it about one second after the file), another value
@@ -110,12 +111,19 @@ internal static class SessionFileParser
     /// <param name="root">Object of the file</param>
     /// <param name="key">[Cannot be null] Key of the value</param>
     /// <returns>[Can be null] The text; null when the key is missing, is not a text, or is blank</returns>
+    /// <exception cref="InvalidOperationException">If the text holds an escaped half of a character (caught by the caller)</exception>
     private static string? ReadText(JsonElement root, string key)
     {
+        // Leaving out a key that is missing or is not a text
+        if (!root.TryGetProperty(key, out JsonElement value) || value.ValueKind != JsonValueKind.String)
+        {
+            // Function's return
+            return null;
+        }
+
         // Function's return
-        return root.TryGetProperty(key, out JsonElement value) && value.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(value.GetString())
-            ? value.GetString()
-            : null;
+        string? text = value.GetString();
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 
     /// <summary>
@@ -134,14 +142,22 @@ internal static class SessionFileParser
             return null;
         }
 
-        // Turning the known values into a status
-        SessionStatus? status = value.ValueKind != JsonValueKind.String ? null : value.GetString() switch
+        // Turning the known values into a status; a text with an escaped half of a character is not a known status
+        SessionStatus? status = null;
+        try
         {
-            "busy" => SessionStatus.Busy,
-            "waiting" => SessionStatus.Waiting,
-            "idle" => SessionStatus.Idle,
-            _ => null,
-        };
+            status = value.ValueKind != JsonValueKind.String ? null : value.GetString() switch
+            {
+                "busy" => SessionStatus.Busy,
+                "waiting" => SessionStatus.Waiting,
+                "idle" => SessionStatus.Idle,
+                _ => null,
+            };
+        }
+        catch (InvalidOperationException)
+        {
+            status = null;
+        }
         if (status is null)
             problems.Add(new ReadProblem(filePath, "The value of the key: status is not a known status (busy, waiting, idle): the status of the session is unknown"));
 
@@ -175,15 +191,17 @@ internal static class SessionFileParser
             return null;
         }
 
-        // Reading the identifier of the session and its working folder
+        // Reading the identifier of the session, which will name a file: letters, digits, hyphens and underscores only
         string? sessionId = ReadText(root, "sessionId");
-        if (sessionId is null)
+        if (sessionId is null || !sessionId.All(character => char.IsAsciiLetterOrDigit(character) || character == '-' || character == '_'))
         {
-            problems.Add(new ReadProblem(filePath, "The key: sessionId is missing or is not a text: the file is skipped"));
+            problems.Add(new ReadProblem(filePath, "The key: sessionId is missing or is not a text of letters, digits, hyphens and underscores: the file is skipped"));
 
             // Function's return
             return null;
         }
+
+        // Reading the working folder
         string? workingFolder = ReadText(root, "cwd");
         if (workingFolder is null || !Path.IsPathFullyQualified(workingFolder))
         {
@@ -255,6 +273,13 @@ internal static class SessionFileParser
 
             // Function's return
             return ReadSession(filePath, document.RootElement, problems);
+        }
+        catch (InvalidOperationException)
+        {
+            problems.Add(new ReadProblem(filePath, "A text of the file holds an escaped half of a character, which is not a valid text: the file is skipped"));
+
+            // Function's return
+            return null;
         }
         catch (JsonException exception)
         {

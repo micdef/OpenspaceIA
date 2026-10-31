@@ -166,6 +166,38 @@ internal static class FolderListing
     }
 
     /// <summary>
+    /// Method used to know whether a folder exists and is a link
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Purpose:</b> a folder that is a link is never walked: it could lead out of the folder of Claude Code.</para>
+    /// <para><b>Behavior:</b> never throws: a folder that disappears or is refused meanwhile is not a link here, and its
+    /// listing then reports it.</para>
+    /// </remarks>
+    /// <param name="folder">[Cannot be null] Full path of the folder</param>
+    /// <returns>
+    /// True  ==> The folder exists and is a junction, a symbolic link or another reparse point<br/>
+    /// False ==> The folder does not exist, is a plain folder, or cannot be looked at
+    /// </returns>
+    public static bool IsLinkedFolder(string folder)
+    {
+        try
+        {
+            // Function's return
+            return Directory.Exists(folder) && IsLink(new DirectoryInfo(folder).Attributes);
+        }
+        catch (IOException)
+        {
+            // Function's return: the folder disappeared meanwhile; its listing says so
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Function's return: the folder is refused; its listing says so
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Method used to list the entries of a folder, in the ordinal order of their names
     /// </summary>
     /// <param name="folder">[Cannot be null] Full path of the folder</param>

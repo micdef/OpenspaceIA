@@ -158,6 +158,83 @@ public sealed class SystemProcessProbeTests
     }
 
     /// <summary>
+    /// The running process with a start one unit earlier is closed too: the comparison is exact on both sides
+    /// </summary>
+    [Fact]
+    public void RunningProcessWithAnEarlierStartIsClosed()
+    {
+        // Skipping on a system that is not supported
+        Assert.SkipUnless(OperatingSystem.IsWindows() || OperatingSystem.IsLinux(), "Only Windows and Linux are supported");
+
+        // Checking the process of the tests with a start one unit earlier
+        string start = StartOfTheCurrentProcess();
+        string earlierStart = (ulong.Parse(start, CultureInfo.InvariantCulture) - 1).ToString(CultureInfo.InvariantCulture);
+        ProcessLiveness liveness = new SystemProcessProbe().Check(Environment.ProcessId, earlierStart, out _);
+
+        // Checking the answer
+        liveness.ShouldBe(ProcessLiveness.Closed);
+    }
+
+    /// <summary>
+    /// A stat line of Linux is read after the last closing bracket, so a name with spaces and brackets does not shift the
+    /// fields; a zombie or a dead process is closed; a line without the expected fields is unknown
+    /// </summary>
+    /// <param name="name">Name of the invented process</param>
+    /// <param name="state">State of the invented process</param>
+    /// <param name="start">Start time in the invented line</param>
+    /// <param name="livenessValue">Answer expected (an integer, because the enumeration is internal)</param>
+    [Theory]
+    [InlineData("claude", "S", "4279", (int)ProcessLiveness.Alive)]
+    [InlineData("a) b 1 2 3", "R", "4279", (int)ProcessLiveness.Alive)]
+    [InlineData("(x) (y)", "S", "4279", (int)ProcessLiveness.Alive)]
+    [InlineData("claude", "S", "4280", (int)ProcessLiveness.Closed)]
+    [InlineData("claude", "Z", "4279", (int)ProcessLiveness.Closed)]
+    [InlineData("claude", "X", "4279", (int)ProcessLiveness.Closed)]
+    public void StatLineOfLinuxIsCompared(string name, string state, string start, int livenessValue)
+    {
+        // Building a stat line of 52 fields, the start time being field 22
+        string line = $"327 ({name}) {state} 1 327 327 0 -1 4194560 100 0 0 0 5 2 0 0 20 0 7 0 {start} 1000000 2000 18446744073709551615 1 1 0 0 0 0 0 0 0 0 0 0 17 3 0 0 0 0 0 1 1 1 1 1 1 1 0\n";
+
+        // Comparing it with the start time of the session
+        ProcessLiveness liveness = SystemProcessProbe.CompareLinuxStat(line, "4279", out string? detail);
+
+        // Checking the answer
+        liveness.ShouldBe((ProcessLiveness)livenessValue);
+        detail.ShouldBeNull();
+    }
+
+    /// <summary>
+    /// A stat text without the expected fields is unknown, with its reason
+    /// </summary>
+    /// <param name="stat">Text without the expected fields</param>
+    [Theory]
+    [InlineData("")]
+    [InlineData("327 claude S 1 327 327 0 -1 4194560 100 0 0 0 5 2 0 0 20 0 7 0 4279 1000000")]
+    [InlineData("327 (claude) S 1 327 327 0 -1 4194560 100 0 0 0 5 2 0 0 20 0 7 0")]
+    public void StatTextWithoutTheExpectedFieldsIsUnknown(string stat)
+    {
+        // Comparing the text with a start time
+        ProcessLiveness liveness = SystemProcessProbe.CompareLinuxStat(stat, "4279", out string? detail);
+
+        // Checking the answer
+        liveness.ShouldBe(ProcessLiveness.Unknown);
+        detail.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    /// <summary>
+    /// The shortest stat line that holds field 22 is read
+    /// </summary>
+    [Fact]
+    public void ShortestStatLineWithTheStartIsRead()
+    {
+        // Comparing a line that ends with field 22
+        ProcessLiveness liveness = SystemProcessProbe.CompareLinuxStat("327 (claude) S 1 327 327 0 -1 4194560 100 0 0 0 5 2 0 0 20 0 7 0 4279", "4279", out _);
+
+        // Checking the answer
+        liveness.ShouldBe(ProcessLiveness.Alive);
+    }
+
+    /// <summary>
     /// A process ID that no process has is closed
     /// </summary>
     [Fact]

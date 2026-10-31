@@ -28,9 +28,12 @@ namespace OpenSpaceIA.Reader;
 /// <para><b>Behavior:</b> the start time written by Claude Code (<c>procStart</c>) is compared exactly with the start time
 /// given by the system, as measured on 2026-10-31. On Windows, it is the start of the process as a FILETIME (100 ns since
 /// 1601, UTC), compared with <see cref="Process.StartTime"/>. On Linux, it is field 22 of <c>/proc/&lt;pid&gt;/stat</c>
-/// (clock ticks since the boot), read and compared as text; this file is public, it holds no secret. A process that the
-/// system refuses to show is unknown, not closed. On any other system, the answer is unknown. Nothing is ever changed: the
-/// process is only looked at.</para>
+/// (clock ticks since the boot), read and compared as text; this file is public, it holds no secret; a zombie is closed. A
+/// process that the system refuses to show is unknown, not closed (on Windows, a process of another user or of an elevated
+/// session). On any other system, the answer is unknown. Nothing is ever changed: the process is only looked at. Known
+/// limits, not verified: the key <c>pidDomain</c> of the session file is not read, so a file left from before a reboot of
+/// Linux, whose process ID and start time match a new process, would be alive; and a <c>/proc</c> that hides the processes
+/// (<c>hidepid</c>) or another namespace of processes would make every session closed.</para>
 /// </remarks>
 internal sealed class SystemProcessProbe : IProcessProbe
 {
@@ -43,6 +46,11 @@ internal sealed class SystemProcessProbe : IProcessProbe
     /// (the first field after the name is field 3)
     /// </summary>
     private const int LinuxStartFieldIndex = 19;
+
+    /// <summary>
+    /// Index of the state of the process (field 3) among the fields that follow its name in <c>/proc/&lt;pid&gt;/stat</c>
+    /// </summary>
+    private const int LinuxStateFieldIndex = 0;
 
     #endregion
 
@@ -191,7 +199,36 @@ internal sealed class SystemProcessProbe : IProcessProbe
             return ProcessLiveness.Unknown;
         }
 
-        // Taking the fields after the name of the process, which is between brackets and may hold spaces
+        // Function's return
+        return CompareLinuxStat(stat, processStart, out detail);
+    }
+
+    #endregion
+
+    #region Publics
+
+    /// <summary>
+    /// Method used to compare the text of a stat file of Linux with the start time written by Claude Code
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Purpose:</b> the part of the check of Linux that needs no running process, so that it can be tested on every
+    /// system.</para>
+    /// <para><b>Behavior:</b> the name of the process (field 2) is between brackets and may hold spaces and brackets: the
+    /// fields are read after the last closing bracket. A zombie (state <c>Z</c>) or a dead process (state <c>X</c>) has
+    /// ended, even when its start time is the same: it is closed.</para>
+    /// </remarks>
+    /// <param name="stat">[Cannot be null] Text of <c>/proc/&lt;pid&gt;/stat</c></param>
+    /// <param name="processStart">[Cannot be null] Start time written by Claude Code</param>
+    /// <param name="detail">[Can be null] Why the answer is unknown; null otherwise</param>
+    /// <returns>
+    /// Alive   ==> The process runs and started at this time<br/>
+    /// Closed  ==> The process started at another time, or it has ended<br/>
+    /// Unknown ==> The text does not have the expected fields
+    /// </returns>
+    public static ProcessLiveness CompareLinuxStat(string stat, string processStart, out string? detail)
+    {
+        // Taking the fields after the name of the process
+        detail = null;
         int endOfName = stat.LastIndexOf(')');
         string[] fields = endOfName < 0 ? Array.Empty<string>() : stat.Substring(endOfName + 1).Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (fields.Length <= LinuxStartFieldIndex)
@@ -202,13 +239,16 @@ internal sealed class SystemProcessProbe : IProcessProbe
             return ProcessLiveness.Unknown;
         }
 
+        // Closing a process that has ended, then comparing the start times
+        if (fields[LinuxStateFieldIndex] == "Z" || fields[LinuxStateFieldIndex] == "X")
+        {
+            // Function's return
+            return ProcessLiveness.Closed;
+        }
+
         // Function's return
         return string.Equals(fields[LinuxStartFieldIndex], processStart, StringComparison.Ordinal) ? ProcessLiveness.Alive : ProcessLiveness.Closed;
     }
-
-    #endregion
-
-    #region Publics
 
     /// <inheritdoc/>
     public ProcessLiveness Check(int processId, string processStart, out string? detail)
