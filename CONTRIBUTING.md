@@ -90,7 +90,17 @@ New scopes are added to this table when a new area of the solution is created.
 - The changes are described in a **changelog fragment**, `changelog/unreleased/<branch>.md` (see [its README](changelog/unreleased/README.md)), never in `CHANGELOG.md` itself: the CI refuses a pull request into a release branch that edits it, except `docs/release-X.Y.Z`.
 - **Two pull requests open at the same time never touch the same file**, so that none of them ever has a merge conflict; a pull request that needs a file of another open one is opened once that one is merged.
 - The build must pass and every review thread must be resolved before merging.
-- **Only the repository owner merges a pull request.** Nobody else, including AI assistants, merges.
+- **Only the repository owner merges a pull request, with one exception.** The owner's main AI assistant, which acts through the owner's GitHub account, may merge a pull request into `release/X.Y.Z` when all of these conditions are met:
+  - the `Build and test` check of the last commit of the pull request is green (not pending, cancelled or missing) and ran after the last change of `release/X.Y.Z`; otherwise the branch is updated and the check runs again;
+  - every member of the review team has reviewed it, and its description states who reviewed what, and how each finding was fixed or why it was kept. For code, the review covers style and conventions, memory and CPU leaks, data leaks and security (OWASP), dependencies and known vulnerabilities, silent failures, and a test for each new behavior. For a pull request that changes only documentation, it covers the accuracy of the text against the code, in each of these areas;
+  - every review thread is resolved by a fix or by an answer written in the thread.
+- **The owner always merges** these pull requests, whatever the target branch:
+  - the pull requests into `dev` and `main`, and the hotfix pull requests; the owner also creates the tags and the GitHub releases;
+  - the security-sensitive pull requests: those that touch authentication, secrets or the network, or that add or update a package; when in doubt, a pull request is security-sensitive;
+  - the pull requests that change the safeguards: `CONTRIBUTING.md`, `.github/` (workflows, rulesets, CI scripts), `.editorconfig`, `.gitattributes`, `.gitignore`, `global.json`, every `Directory.Build.props` and `Directory.Packages.props`, or that remove or disable a test, a test project or its entry in `OpenSpaceIA.slnx`;
+  - the pull requests that contain code written by the owner.
+- Nobody else merges: no other contributor and no other AI agent.
+- GitHub does not enforce this exception. It enforces only the rules of the table below (the check, the resolved threads, the merge commit), and it cannot tell the merges of the assistant from those of the owner. The rest is a rule of process: before merging, the assistant writes on the pull request that it merges under this exception; it never merges with admin rights or with an auto-merge on a pending check; and it leaves the pull request to the owner when a condition is not met or is unclear. The CI does not check that each new behavior has its own test: only the review does.
 
 ### Merge strategy
 
